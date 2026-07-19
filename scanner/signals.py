@@ -77,7 +77,7 @@ def check_sma_crossover(
     if bullish_crossover and current_rsi < rsi_buy_max:
         return TradeSignal(
             symbol=symbol,
-            action="BUY",
+            signal_type="BUY",
             price=current_price,
             reason=(
                 f"Bullish SMA crossover confirmed by "
@@ -88,7 +88,7 @@ def check_sma_crossover(
     if bearish_crossover and current_rsi > rsi_sell_min:
         return TradeSignal(
             symbol=symbol,
-            action="SELL",
+            signal_type="SELL",
             price=current_price,
             reason=(
                 f"Bearish SMA crossover confirmed by "
