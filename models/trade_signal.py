@@ -4,6 +4,6 @@ from dataclasses import dataclass
 @dataclass
 class TradeSignal:
     symbol: str
-    signal: str
+    signal_type: str
     price: float
-    sma20: float
+    reason: str
