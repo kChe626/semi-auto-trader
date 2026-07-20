@@ -1,11 +1,12 @@
 import os
 
+from alpaca.data.historical import StockHistoricalDataClient
 from alpaca.trading.client import TradingClient
 from dotenv import load_dotenv
-from alpaca.data.historical import StockHistoricalDataClient
 
 
 load_dotenv()
+
 
 def create_market_data_client() -> StockHistoricalDataClient:
     api_key = os.getenv("ALPACA_API_KEY")
@@ -20,6 +21,7 @@ def create_market_data_client() -> StockHistoricalDataClient:
         api_key,
         secret_key,
     )
+
 
 def create_trading_client() -> TradingClient:
     api_key = os.getenv("ALPACA_API_KEY")
@@ -45,9 +47,9 @@ def display_account_summary() -> None:
     print("Connected to Alpaca Paper Trading")
     print("=" * 40)
     print(f"Account Status : {account.status}")
-    print(f"Cash           : ${account.cash}")
-    print(f"Buying Power   : ${account.buying_power}")
-    print(f"Equity         : ${account.equity}")
+    print(f"Cash           : ${float(account.cash):,.2f}")
+    print(f"Buying Power   : ${float(account.buying_power):,.2f}")
+    print(f"Equity         : ${float(account.equity):,.2f}")
 
 
 if __name__ == "__main__":
