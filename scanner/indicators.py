@@ -77,3 +77,46 @@ def add_rsi(
     )
 
     return result
+
+def add_atr(
+    data: pd.DataFrame,
+    period: int = 14,
+    column_name: str = "ATR",
+) -> pd.DataFrame:
+    """
+    Return a copy of the DataFrame with an Average True Range column.
+
+    ATR is calculated using a simple rolling average of true range.
+    """
+    if period <= 0:
+        raise ValueError("period must be greater than zero")
+
+    required_columns = {"High", "Low", "Close"}
+    missing_columns = required_columns.difference(data.columns)
+
+    if missing_columns:
+        missing = ", ".join(sorted(missing_columns))
+        raise ValueError(f"Missing required columns: {missing}")
+
+    result = data.copy()
+    previous_close = result["Close"].shift(1)
+
+    high_low = result["High"] - result["Low"]
+    high_previous_close = (result["High"] - previous_close).abs()
+    low_previous_close = (result["Low"] - previous_close).abs()
+
+    true_range = pd.concat(
+        [
+            high_low,
+            high_previous_close,
+            low_previous_close,
+        ],
+        axis=1,
+    ).max(axis=1)
+
+    result[column_name] = true_range.rolling(
+        window=period,
+        min_periods=period,
+    ).mean()
+
+    return result

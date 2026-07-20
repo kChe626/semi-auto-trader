@@ -13,3 +13,6 @@ class TradePlan:
     reward_per_share: float
     total_risk: float
     risk_reward_ratio: float
+    rsi: float | None = None
+    short_sma: float | None = None
+    long_sma: float | None = None
