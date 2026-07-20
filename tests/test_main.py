@@ -24,6 +24,7 @@ def configure_common_mocks(
     monkeypatch,
 ) -> tuple[MagicMock, MagicMock]:
     client = MagicMock()
+
     client.get_account.return_value = SimpleNamespace(
         equity="100000.00",
     )
@@ -36,11 +37,19 @@ def configure_common_mocks(
         "create_trading_client",
         lambda: client,
     )
+
+    monkeypatch.setattr(
+        main,
+        "market_is_bullish",
+        lambda: True,
+    )
+
     monkeypatch.setattr(
         main,
         "scan_market",
         lambda: [signal],
     )
+
     monkeypatch.setattr(
         main,
         "create_trade_plan_from_signal",
@@ -48,6 +57,7 @@ def configure_common_mocks(
     )
 
     portfolio_manager = MagicMock()
+
     portfolio_manager.can_open_new_trade.return_value = (
         True,
         "",
@@ -76,6 +86,16 @@ def configure_common_mocks(
         lambda trading_client: executor,
     )
 
+    monkeypatch.setattr(
+        main,
+        "verify_submitted_order",
+        lambda **kwargs: SimpleNamespace(
+            id="paper-order-123",
+            symbol="META",
+            status="accepted",
+        ),
+    )
+
     return client, executor
 
 
@@ -84,6 +104,7 @@ def test_main_stops_when_no_signals(
     capsys,
 ) -> None:
     client = MagicMock()
+
     client.get_account.return_value = SimpleNamespace(
         equity="100000.00",
     )
@@ -93,6 +114,13 @@ def test_main_stops_when_no_signals(
         "create_trading_client",
         lambda: client,
     )
+
+    monkeypatch.setattr(
+        main,
+        "market_is_bullish",
+        lambda: True,
+    )
+
     monkeypatch.setattr(
         main,
         "scan_market",
@@ -120,7 +148,9 @@ def test_execution_disabled_never_submits_order(
         False,
     )
 
-    confirmation = MagicMock(return_value=True)
+    confirmation = MagicMock(
+        return_value=True
+    )
 
     monkeypatch.setattr(
         main,
@@ -133,7 +163,9 @@ def test_execution_disabled_never_submits_order(
     output = capsys.readouterr().out
 
     assert "Execution is disabled." in output
+
     confirmation.assert_not_called()
+
     executor.submit_bracket_order.assert_not_called()
 
 
@@ -150,6 +182,7 @@ def test_cancelled_confirmation_never_submits_order(
         "EXECUTION_ENABLED",
         True,
     )
+
     monkeypatch.setattr(
         main,
         "confirm_paper_order",
@@ -161,6 +194,7 @@ def test_cancelled_confirmation_never_submits_order(
     output = capsys.readouterr().out
 
     assert "cancelled" in output
+
     executor.submit_bracket_order.assert_not_called()
 
 
@@ -177,6 +211,7 @@ def test_confirmed_order_is_submitted_once(
         "EXECUTION_ENABLED",
         True,
     )
+
     monkeypatch.setattr(
         main,
         "confirm_paper_order",
@@ -197,9 +232,15 @@ def test_confirmed_order_is_submitted_once(
     executor.submit_bracket_order.assert_called_once()
 
     submitted_plan = (
-        executor.submit_bracket_order.call_args.args[0]
+        executor
+        .submit_bracket_order
+        .call_args
+        .args[0]
     )
 
     assert submitted_plan.symbol == "META"
-    assert "PAPER ORDER SUBMITTED" in output
+    assert (
+        "PAPER ORDER SUBMITTED AND VERIFIED"
+        in output
+    )
     assert "paper-order-123" in output

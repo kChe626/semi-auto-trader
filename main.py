@@ -1,6 +1,7 @@
 from broker.alpaca_client import create_trading_client
 from broker.order_confirmation import confirm_paper_order
 from broker.order_executor import OrderExecutor
+from broker.order_verifier import verify_submitted_order
 from broker.preflight_service import run_broker_preflight
 from config.trading_config import (
     EXECUTION_ENABLED,
@@ -14,6 +15,7 @@ from risk.plan_formatter import format_trade_plan
 from risk.portfolio_manager import PortfolioManager
 from risk.risk_manager import RiskManager
 from risk.signal_to_plan import create_trade_plan_from_signal
+from scanner.market_filter import market_is_bullish
 from scanner.scanner import scan_market
 
 
@@ -25,25 +27,51 @@ def main() -> None:
         account_equity = float(account.equity)
     except Exception as error:
         print(
-            f"Unable to retrieve Alpaca account information: "
+            "Unable to retrieve Alpaca account information: "
             f"{error}"
         )
         return
+
+    print("=" * 60)
+    print("SEMI-AUTOMATED PAPER TRADER")
+    print("=" * 60)
+    print(f"Account Equity: ${account_equity:,.2f}")
+    print()
+
+    try:
+        bullish_market = market_is_bullish()
+    except Exception as error:
+        print(
+            "Unable to evaluate the market trend: "
+            f"{error}"
+        )
+        return
+
+    if not bullish_market:
+        print("=" * 60)
+        print("MARKET FILTER")
+        print("=" * 60)
+        print("SPY is below its 50-day SMA.")
+        print("No new long trades today.")
+        return
+
+    print("Market filter passed.")
+    print("SPY is above its 50-day SMA.")
+    print(f"Scanning {len(WATCHLIST)} symbols...")
+    print()
 
     risk_manager = RiskManager(
         account_equity=account_equity,
         max_position_percent=MAX_POSITION_PERCENT,
     )
 
-    portfolio_manager = PortfolioManager(trading_client)
-    order_executor = OrderExecutor(trading_client)
+    portfolio_manager = PortfolioManager(
+        trading_client
+    )
 
-    print("=" * 60)
-    print("SEMI-AUTOMATED PAPER TRADER")
-    print("=" * 60)
-    print(f"Account Equity: ${account_equity:,.2f}")
-    print(f"Scanning {len(WATCHLIST)} symbols...")
-    print()
+    order_executor = OrderExecutor(
+        trading_client
+    )
 
     try:
         signals = scan_market()
@@ -64,7 +92,9 @@ def main() -> None:
             reward_risk_ratio=REWARD_RISK_RATIO,
         )
 
-        plan = risk_manager.apply_position_limit(plan)
+        plan = risk_manager.apply_position_limit(
+            plan
+        )
 
         if plan.quantity <= 0:
             print(
@@ -82,8 +112,9 @@ def main() -> None:
             )
         except Exception as error:
             print(
-                f"Skipping {plan.symbol}: unable to check "
-                f"portfolio state: {error}"
+                f"Skipping {plan.symbol}: "
+                "unable to check portfolio state: "
+                f"{error}"
             )
             continue
 
@@ -118,8 +149,8 @@ def main() -> None:
 
         if not EXECUTION_ENABLED:
             print(
-                f"\nExecution is disabled. "
-                f"No paper order was submitted for "
+                "\nExecution is disabled. "
+                "No paper order was submitted for "
                 f"{plan.symbol}."
             )
             print(
@@ -136,10 +167,14 @@ def main() -> None:
             continue
 
         try:
-            order = order_executor.submit_bracket_order(plan)
+            order = (
+                order_executor.submit_bracket_order(
+                    plan
+                )
+            )
         except Exception as error:
             print(
-                f"\nPaper order submission failed for "
+                "\nPaper order submission failed for "
                 f"{plan.symbol}: {error}"
             )
             continue
@@ -147,19 +182,51 @@ def main() -> None:
         order_id = getattr(
             order,
             "id",
-            "Unavailable",
+            None,
         )
+
+        if order_id is None:
+            print(
+                "\nWarning: Alpaca returned an order "
+                "without an order ID."
+            )
+            return
+
+        try:
+            verified_order = verify_submitted_order(
+                client=trading_client,
+                order_id=order_id,
+            )
+        except Exception as error:
+            print(
+                "\nPaper order was submitted, but "
+                "broker verification failed: "
+                f"{error}"
+            )
+            print(
+                f"Submitted Order ID: {order_id}"
+            )
+            return
+
         order_status = getattr(
-            order,
+            verified_order,
             "status",
             "Unavailable",
         )
 
+        order_symbol = getattr(
+            verified_order,
+            "symbol",
+            plan.symbol,
+        )
+
         print()
         print("=" * 60)
-        print("PAPER ORDER SUBMITTED")
+        print(
+            "PAPER ORDER SUBMITTED AND VERIFIED"
+        )
         print("=" * 60)
-        print(f"Symbol:   {plan.symbol}")
+        print(f"Symbol:   {order_symbol}")
         print(f"Side:     {plan.signal_type}")
         print(f"Quantity: {plan.quantity}")
         print(f"Order ID: {order_id}")
