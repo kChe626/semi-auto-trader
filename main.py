@@ -4,21 +4,24 @@ from broker.order_executor import OrderExecutor
 from broker.order_verifier import verify_submitted_order
 from broker.preflight_service import run_broker_preflight
 from config.trading_config import (
+    ALLOW_LONG_TRADES,
+    ALLOW_SHORT_TRADES,
     EXECUTION_ENABLED,
     MAX_POSITION_PERCENT,
+    MINIMUM_TRADE_SCORE,
     REWARD_RISK_RATIO,
     RISK_PERCENT,
     STOP_LOSS_PERCENT,
 )
 from config.watchlist import WATCHLIST
+from database.journal_service import record_plan_safely
+from database.trade_journal import TradeJournal
 from notifications.notification_service import (
     NotificationSender,
     format_trade_alert,
     send_notification_safely,
 )
-from notifications.telegram_notifier import (
-    send_telegram_message,
-)
+from notifications.telegram_notifier import send_telegram_message
 from risk.plan_formatter import format_trade_plan
 from risk.portfolio_manager import PortfolioManager
 from risk.risk_manager import RiskManager
@@ -28,8 +31,21 @@ from scanner.scanner import scan_market
 from scanner.trade_ranker import rank_trade_plans
 
 
+def signal_direction_is_allowed(signal_type: str) -> bool:
+    normalized_signal_type = signal_type.upper()
+
+    if normalized_signal_type == "BUY":
+        return ALLOW_LONG_TRADES
+
+    if normalized_signal_type == "SELL":
+        return ALLOW_SHORT_TRADES
+
+    return False
+
+
 def main(
     notification_sender: NotificationSender | None = None,
+    journal: TradeJournal | None = None,
 ) -> None:
     trading_client = create_trading_client()
 
@@ -41,6 +57,7 @@ def main(
             "Unable to retrieve Alpaca account information: "
             f"{error}"
         )
+
         print(message)
 
         send_notification_safely(
@@ -53,6 +70,14 @@ def main(
     print("SEMI-AUTOMATED PAPER TRADER")
     print("=" * 60)
     print(f"Account Equity: ${account_equity:,.2f}")
+    print(f"Watchlist Size: {len(WATCHLIST)}")
+    print(f"Minimum Score: {MINIMUM_TRADE_SCORE:.2f}")
+    print(f"Long Trades: {'Enabled' if ALLOW_LONG_TRADES else 'Disabled'}")
+    print(f"Short Trades: {'Enabled' if ALLOW_SHORT_TRADES else 'Disabled'}")
+    print(
+        "Paper Execution: "
+        f"{'Enabled' if EXECUTION_ENABLED else 'Disabled'}"
+    )
     print()
 
     try:
@@ -62,6 +87,7 @@ def main(
             "Unable to evaluate the market trend: "
             f"{error}"
         )
+
         print(message)
 
         send_notification_safely(
@@ -75,29 +101,25 @@ def main(
     print("=" * 60)
 
     if not bullish_market:
-        print(
-            "SPY is meaningfully below its "
-            "50-day SMA."
-        )
+        print("SPY is meaningfully below its 50-day SMA.")
         print("No new long trades today.")
 
         send_notification_safely(
             notification_sender,
             (
                 "📉 NO TRADES TODAY\n\n"
-                "SPY is meaningfully below its "
-                "50-day SMA.\n"
-                "The market filter blocked new "
-                "long trades."
+                "SPY is meaningfully below its 50-day SMA.\n"
+                "The market filter blocked new long trades."
             ),
         )
         return
 
     print("Market filter passed.")
     print(
-        "SPY is bullish or within the "
-        "neutral range of its 50-day SMA."
+        "SPY is bullish or within the neutral range "
+        "of its 50-day SMA."
     )
+    print()
     print(f"Scanning {len(WATCHLIST)} symbols...")
     print()
 
@@ -118,6 +140,7 @@ def main(
         signals = scan_market()
     except Exception as error:
         message = f"Market scan failed: {error}"
+
         print(f"\n{message}")
 
         send_notification_safely(
@@ -140,7 +163,27 @@ def main(
 
     eligible_plans = []
 
+    print()
+    print("=" * 60)
+    print("SIGNAL FILTERING")
+    print("=" * 60)
+
     for signal in signals:
+        signal_type = str(signal.signal_type).upper()
+
+        if not signal_direction_is_allowed(signal_type):
+            if signal_type == "BUY":
+                reason = "long trades are disabled"
+            elif signal_type == "SELL":
+                reason = "short selling is disabled"
+            else:
+                reason = f"unsupported signal type: {signal_type}"
+
+            print(
+                f"Skipping {signal.symbol}: {reason}."
+            )
+            continue
+
         plan = create_trade_plan_from_signal(
             signal=signal,
             account_equity=account_equity,
@@ -155,25 +198,27 @@ def main(
 
         if plan.quantity <= 0:
             print(
-                f"\nSkipping {plan.symbol}: "
+                f"Skipping {plan.symbol}: "
                 "quantity is zero after risk limits."
             )
             continue
 
         eligible_plans.append(plan)
 
+    print("=" * 60)
+
     if not eligible_plans:
         print(
             "\nNo trade plans remained after "
-            "risk limits were applied."
+            "direction and risk filters were applied."
         )
 
         send_notification_safely(
             notification_sender,
             (
                 "⚠️ NO ELIGIBLE TRADES\n\n"
-                "Signals were found, but no trade "
-                "plans remained after risk limits."
+                "Signals were found, but none remained "
+                "after direction and risk filters."
             ),
         )
         return
@@ -181,6 +226,12 @@ def main(
     ranked_trades = rank_trade_plans(
         eligible_plans
     )
+
+    qualified_trades = [
+        trade
+        for trade in ranked_trades
+        if trade.score >= MINIMUM_TRADE_SCORE
+    ]
 
     print()
     print("=" * 60)
@@ -191,10 +242,17 @@ def main(
         ranked_trades,
         start=1,
     ):
+        score_status = (
+            "QUALIFIED"
+            if trade_score.score >= MINIMUM_TRADE_SCORE
+            else "BELOW MINIMUM"
+        )
+
         print(
             f"{position}. "
             f"{trade_score.plan.symbol} | "
-            f"Score: {trade_score.score:.2f}"
+            f"Score: {trade_score.score:.2f} | "
+            f"{score_status}"
         )
 
         for reason in trade_score.reasons:
@@ -202,18 +260,41 @@ def main(
 
     print("=" * 60)
 
-    for trade_score in ranked_trades:
+    if not qualified_trades:
+        print(
+            "\nNo trade candidates met the "
+            "minimum score requirement."
+        )
+
+        send_notification_safely(
+            notification_sender,
+            (
+                "📊 SCAN COMPLETE\n\n"
+                "No trade candidates met the minimum "
+                f"score of {MINIMUM_TRADE_SCORE:.0f}."
+            ),
+        )
+        return
+
+    for trade_score in qualified_trades:
         plan = trade_score.plan
 
+        record_plan_safely(
+            journal,
+            plan=plan,
+            status="candidate_ranked",
+            score=trade_score.score,
+            reason=(
+                "Candidate passed direction, risk, "
+                "and minimum-score filters."
+            ),
+        )
+
         print()
-        print(
-            "Evaluating ranked candidate: "
-            f"{plan.symbol}"
-        )
-        print(
-            "Trade score: "
-            f"{trade_score.score:.2f}"
-        )
+        print("=" * 60)
+        print(f"EVALUATING {plan.symbol}")
+        print("=" * 60)
+        print(f"Trade Score: {trade_score.score:.2f}")
         print()
         print(format_trade_plan(plan))
 
@@ -227,7 +308,16 @@ def main(
                 "unable to check portfolio state: "
                 f"{error}"
             )
+
             print(message)
+
+            record_plan_safely(
+                journal,
+                plan=plan,
+                status="portfolio_check_error",
+                score=trade_score.score,
+                reason=str(error),
+            )
 
             send_notification_safely(
                 notification_sender,
@@ -243,7 +333,16 @@ def main(
                 f"Skipping {plan.symbol}: "
                 f"{portfolio_reason}"
             )
+
             print(message)
+
+            record_plan_safely(
+                journal,
+                plan=plan,
+                status="portfolio_blocked",
+                score=trade_score.score,
+                reason=portfolio_reason,
+            )
 
             send_notification_safely(
                 notification_sender,
@@ -265,7 +364,16 @@ def main(
                 f"Skipping {plan.symbol}: "
                 f"broker preflight failed: {error}"
             )
+
             print(message)
+
+            record_plan_safely(
+                journal,
+                plan=plan,
+                status="preflight_error",
+                score=trade_score.score,
+                reason=str(error),
+            )
 
             send_notification_safely(
                 notification_sender,
@@ -278,8 +386,7 @@ def main(
 
         if not preflight.approved:
             print(
-                f"\nPreflight rejected "
-                f"{plan.symbol}:"
+                f"\nPreflight rejected {plan.symbol}:"
             )
 
             for reason in preflight.reasons:
@@ -288,6 +395,16 @@ def main(
             reason_text = "\n".join(
                 f"• {reason}"
                 for reason in preflight.reasons
+            )
+
+            record_plan_safely(
+                journal,
+                plan=plan,
+                status="preflight_rejected",
+                score=trade_score.score,
+                reason="; ".join(
+                    preflight.reasons
+                ),
             )
 
             send_notification_safely(
@@ -302,6 +419,16 @@ def main(
 
         print("\nPreflight checks passed.")
 
+        record_plan_safely(
+            journal,
+            plan=plan,
+            status="preflight_passed",
+            score=trade_score.score,
+            reason=(
+                "All broker preflight checks passed."
+            ),
+        )
+
         send_notification_safely(
             notification_sender,
             format_trade_alert(
@@ -311,14 +438,26 @@ def main(
         )
 
         if not EXECUTION_ENABLED:
+            print()
             print(
-                "\nExecution is disabled. "
+                "Execution is disabled. "
                 "No paper order was submitted for "
                 f"{plan.symbol}."
             )
             print(
                 "Set EXECUTION_ENABLED = True in "
                 "config/trading_config.py when ready."
+            )
+
+            record_plan_safely(
+                journal,
+                plan=plan,
+                status="execution_disabled",
+                score=trade_score.score,
+                reason=(
+                    "Trade passed preflight, but "
+                    "execution is disabled in configuration."
+                ),
             )
 
             send_notification_safely(
@@ -337,6 +476,17 @@ def main(
                 f"{plan.symbol} cancelled."
             )
 
+            record_plan_safely(
+                journal,
+                plan=plan,
+                status="user_cancelled",
+                score=trade_score.score,
+                reason=(
+                    "Paper order was not approved "
+                    "in the terminal."
+                ),
+            )
+
             send_notification_safely(
                 notification_sender,
                 (
@@ -348,15 +498,21 @@ def main(
             continue
 
         try:
-            order = (
-                order_executor.submit_bracket_order(
-                    plan
-                )
+            order = order_executor.submit_bracket_order(
+                plan
             )
         except Exception as error:
             print(
                 "\nPaper order submission failed for "
                 f"{plan.symbol}: {error}"
+            )
+
+            record_plan_safely(
+                journal,
+                plan=plan,
+                status="submission_failed",
+                score=trade_score.score,
+                reason=str(error),
             )
 
             send_notification_safely(
@@ -381,6 +537,17 @@ def main(
                 "without an order ID."
             )
 
+            record_plan_safely(
+                journal,
+                plan=plan,
+                status="missing_order_id",
+                score=trade_score.score,
+                reason=(
+                    "Alpaca returned an order without "
+                    "an order ID."
+                ),
+            )
+
             send_notification_safely(
                 notification_sender,
                 (
@@ -402,8 +569,15 @@ def main(
                 "broker verification failed: "
                 f"{error}"
             )
-            print(
-                f"Submitted Order ID: {order_id}"
+            print(f"Submitted Order ID: {order_id}")
+
+            record_plan_safely(
+                journal,
+                plan=plan,
+                status="verification_failed",
+                score=trade_score.score,
+                reason=str(error),
+                order_id=order_id,
             )
 
             send_notification_safely(
@@ -431,9 +605,7 @@ def main(
 
         print()
         print("=" * 60)
-        print(
-            "PAPER ORDER SUBMITTED AND VERIFIED"
-        )
+        print("PAPER ORDER SUBMITTED AND VERIFIED")
         print("=" * 60)
         print(f"Symbol:   {order_symbol}")
         print(f"Side:     {plan.signal_type}")
@@ -442,6 +614,17 @@ def main(
         print(f"Order ID: {order_id}")
         print(f"Status:   {order_status}")
         print("=" * 60)
+
+        record_plan_safely(
+            journal,
+            plan=plan,
+            status="submitted_verified",
+            score=trade_score.score,
+            reason=(
+                f"Broker order status: {order_status}"
+            ),
+            order_id=order_id,
+        )
 
         send_notification_safely(
             notification_sender,
@@ -467,13 +650,14 @@ def main(
         notification_sender,
         (
             "ℹ️ SCAN COMPLETE\n\n"
-            "Candidates were evaluated, but no "
-            "paper orders were submitted."
+            "Qualified candidates were evaluated, "
+            "but no paper orders were submitted."
         ),
     )
 
 
 if __name__ == "__main__":
     main(
-        notification_sender=send_telegram_message
+        notification_sender=send_telegram_message,
+        journal=TradeJournal(),
     )

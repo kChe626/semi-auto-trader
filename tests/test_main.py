@@ -29,7 +29,11 @@ def configure_common_mocks(
         equity="100000.00",
     )
 
-    signal = MagicMock()
+    signal = SimpleNamespace(
+        symbol="META",
+        signal_type="BUY",
+    )
+
     plan = create_test_plan()
 
     monkeypatch.setattr(
@@ -54,6 +58,20 @@ def configure_common_mocks(
         main,
         "create_trade_plan_from_signal",
         lambda **kwargs: plan,
+    )
+
+    monkeypatch.setattr(
+        main,
+        "rank_trade_plans",
+        lambda plans: [
+            SimpleNamespace(
+                plan=plans[0],
+                score=85.0,
+                reasons=[
+                    "Qualified test candidate.",
+                ],
+            )
+        ],
     )
 
     portfolio_manager = MagicMock()
@@ -239,8 +257,10 @@ def test_confirmed_order_is_submitted_once(
     )
 
     assert submitted_plan.symbol == "META"
+
     assert (
         "PAPER ORDER SUBMITTED AND VERIFIED"
         in output
     )
+
     assert "paper-order-123" in output
