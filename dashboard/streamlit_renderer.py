@@ -2,8 +2,15 @@ from __future__ import annotations
 
 from typing import Any, Protocol, Sequence
 
+from dashboard.analytics_presentation_models import (
+    AnalyticsSectionViewModel,
+    AnalyticsTableViewModel,
+)
 from dashboard.presentation_models import (
     AccountSectionViewModel,
+)
+from dashboard.scanner_presentation_models import (
+    ScannerSectionViewModel,
 )
 
 
@@ -48,10 +55,10 @@ class StreamlitProtocol(Protocol):
 
 class StreamlitDashboardRenderer:
     """
-    Renders presentation-ready dashboard models.
+    Render presentation-ready dashboard models.
 
     This class does not access Alpaca, SQLite, analytics
-    services, or trade execution services.
+    services, scanner services, or trade execution services.
     """
 
     def __init__(
@@ -75,6 +82,94 @@ class StreamlitDashboardRenderer:
         )
 
         self._render_positions(account)
+
+    def render_scanner_section(
+        self,
+        scanner: ScannerSectionViewModel,
+    ) -> None:
+        """
+        Render market scanner signals.
+        """
+
+        self._st.header("Market Scanner")
+
+        if not scanner.has_results:
+            self._st.info(
+                "No trade signals were found."
+            )
+            return
+
+        rows = [
+            {
+                "Symbol": result.symbol,
+                "Signal": result.signal,
+                "Price": result.price,
+                "Short SMA": result.short_sma,
+                "Long SMA": result.long_sma,
+                "RSI": result.rsi,
+                "ATR": result.atr,
+                "Reason": result.reason,
+            }
+            for result in scanner.results
+        ]
+
+        self._st.dataframe(
+            rows,
+            use_container_width=True,
+            hide_index=True,
+        )
+
+    def render_analytics_section(
+        self,
+        analytics: AnalyticsSectionViewModel,
+    ) -> None:
+        """
+        Render closed-trade performance analytics.
+        """
+
+        self._st.header("Performance Analytics")
+
+        self._render_analytics_metrics(analytics)
+
+        if not self._has_analytics_table_data(
+            analytics
+        ):
+            self._st.info(
+                "No closed trades have been recorded yet. "
+                "Performance analytics will appear after "
+                "the first completed trade."
+            )
+            return
+
+        self._render_analytics_table(
+            title="Equity Curve",
+            table=analytics.equity_curve,
+        )
+
+        self._render_analytics_table(
+            title="Drawdown",
+            table=analytics.drawdown,
+        )
+
+        self._render_analytics_table(
+            title="Monthly Performance",
+            table=analytics.monthly_performance,
+        )
+
+        self._render_analytics_table(
+            title="Yearly Performance",
+            table=analytics.yearly_performance,
+        )
+
+        self._render_analytics_table(
+            title="Trades by Symbol",
+            table=analytics.symbol_distribution,
+        )
+
+        self._render_analytics_table(
+            title="Trades by Weekday",
+            table=analytics.weekday_distribution,
+        )
 
     def _render_primary_metrics(
         self,
@@ -164,4 +259,76 @@ class StreamlitDashboardRenderer:
             rows,
             use_container_width=True,
             hide_index=True,
+        )
+
+    def _render_analytics_metrics(
+        self,
+        analytics: AnalyticsSectionViewModel,
+    ) -> None:
+        metrics = analytics.metrics
+
+        if not metrics:
+            return
+
+        for start_index in range(0, len(metrics), 4):
+            metric_group = metrics[
+                start_index:start_index + 4
+            ]
+
+            columns = self._st.columns(
+                len(metric_group)
+            )
+
+            for column, metric in zip(
+                columns,
+                metric_group,
+                strict=True,
+            ):
+                column.metric(
+                    metric.label,
+                    metric.value,
+                )
+
+    def _render_analytics_table(
+        self,
+        *,
+        title: str,
+        table: AnalyticsTableViewModel,
+    ) -> None:
+        if not table.rows:
+            return
+
+        self._st.subheader(title)
+
+        rows = [
+            dict(
+                zip(
+                    table.columns,
+                    row,
+                    strict=True,
+                )
+            )
+            for row in table.rows
+        ]
+
+        self._st.dataframe(
+            rows,
+            use_container_width=True,
+            hide_index=True,
+        )
+
+    @staticmethod
+    def _has_analytics_table_data(
+        analytics: AnalyticsSectionViewModel,
+    ) -> bool:
+        return any(
+            table.rows
+            for table in (
+                analytics.equity_curve,
+                analytics.drawdown,
+                analytics.monthly_performance,
+                analytics.yearly_performance,
+                analytics.symbol_distribution,
+                analytics.weekday_distribution,
+            )
         )

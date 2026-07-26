@@ -2,6 +2,11 @@ from __future__ import annotations
 
 from unittest.mock import Mock
 
+from dashboard.analytics_presentation_models import (
+    AnalyticsMetricViewModel,
+    AnalyticsSectionViewModel,
+    AnalyticsTableViewModel,
+)
 from dashboard.presentation_models import (
     AccountMetricsViewModel,
     AccountSectionViewModel,
@@ -41,6 +46,27 @@ def make_position() -> PositionRowViewModel:
     )
 
 
+def make_empty_table() -> AnalyticsTableViewModel:
+    return AnalyticsTableViewModel(
+        columns=(),
+        rows=(),
+    )
+
+
+def make_empty_analytics() -> (
+    AnalyticsSectionViewModel
+):
+    return AnalyticsSectionViewModel(
+        metrics=(),
+        equity_curve=make_empty_table(),
+        drawdown=make_empty_table(),
+        monthly_performance=make_empty_table(),
+        yearly_performance=make_empty_table(),
+        symbol_distribution=make_empty_table(),
+        weekday_distribution=make_empty_table(),
+    )
+
+
 def make_streamlit_mock() -> Mock:
     streamlit = Mock()
 
@@ -73,7 +99,7 @@ def test_renderer_displays_account_header() -> None:
 
 
 def test_renderer_displays_primary_metrics() -> None:
-    streamlit = make_streamlit_mock()
+    streamlit = Mock()
 
     primary_columns = [
         Mock(),
@@ -81,7 +107,11 @@ def test_renderer_displays_primary_metrics() -> None:
         Mock(),
         Mock(),
     ]
-    secondary_columns = [Mock(), Mock()]
+
+    secondary_columns = [
+        Mock(),
+        Mock(),
+    ]
 
     streamlit.columns.side_effect = [
         primary_columns,
@@ -127,7 +157,7 @@ def test_renderer_displays_primary_metrics() -> None:
 
 
 def test_renderer_displays_secondary_metrics() -> None:
-    streamlit = make_streamlit_mock()
+    streamlit = Mock()
 
     primary_columns = [
         Mock(),
@@ -135,7 +165,11 @@ def test_renderer_displays_secondary_metrics() -> None:
         Mock(),
         Mock(),
     ]
-    secondary_columns = [Mock(), Mock()]
+
+    secondary_columns = [
+        Mock(),
+        Mock(),
+    ]
 
     streamlit.columns.side_effect = [
         primary_columns,
@@ -240,4 +274,152 @@ def test_renderer_displays_account_status() -> None:
 
     streamlit.caption.assert_called_once_with(
         "Account status: ACTIVE"
+    )
+
+
+def test_renderer_displays_analytics_header() -> None:
+    streamlit = Mock()
+
+    renderer = StreamlitDashboardRenderer(
+        streamlit_module=streamlit
+    )
+
+    renderer.render_analytics_section(
+        make_empty_analytics()
+    )
+
+    streamlit.header.assert_called_once_with(
+        "Performance Analytics"
+    )
+
+
+def test_renderer_displays_empty_analytics_message() -> None:
+    streamlit = Mock()
+
+    renderer = StreamlitDashboardRenderer(
+        streamlit_module=streamlit
+    )
+
+    renderer.render_analytics_section(
+        make_empty_analytics()
+    )
+
+    streamlit.info.assert_called_once_with(
+        "No closed trades have been recorded yet. "
+        "Performance analytics will appear after "
+        "the first completed trade."
+    )
+
+    streamlit.dataframe.assert_not_called()
+
+
+def test_renderer_displays_analytics_metrics() -> None:
+    streamlit = Mock()
+
+    metric_columns = [
+        Mock(),
+        Mock(),
+    ]
+
+    streamlit.columns.return_value = (
+        metric_columns
+    )
+
+    analytics = AnalyticsSectionViewModel(
+        metrics=(
+            AnalyticsMetricViewModel(
+                label="Total Trades",
+                value="10",
+            ),
+            AnalyticsMetricViewModel(
+                label="Win Rate",
+                value="60.00%",
+            ),
+        ),
+        equity_curve=make_empty_table(),
+        drawdown=make_empty_table(),
+        monthly_performance=make_empty_table(),
+        yearly_performance=make_empty_table(),
+        symbol_distribution=make_empty_table(),
+        weekday_distribution=make_empty_table(),
+    )
+
+    renderer = StreamlitDashboardRenderer(
+        streamlit_module=streamlit
+    )
+
+    renderer.render_analytics_section(
+        analytics
+    )
+
+    streamlit.columns.assert_called_once_with(2)
+
+    metric_columns[0].metric\
+        .assert_called_once_with(
+            "Total Trades",
+            "10",
+        )
+
+    metric_columns[1].metric\
+        .assert_called_once_with(
+            "Win Rate",
+            "60.00%",
+        )
+
+
+def test_renderer_displays_analytics_table() -> None:
+    streamlit = Mock()
+
+    equity_curve = AnalyticsTableViewModel(
+        columns=(
+            "Date",
+            "Equity",
+        ),
+        rows=(
+            (
+                "2026-07-01",
+                "$100,000.00",
+            ),
+            (
+                "2026-07-02",
+                "$101,000.00",
+            ),
+        ),
+    )
+
+    analytics = AnalyticsSectionViewModel(
+        metrics=(),
+        equity_curve=equity_curve,
+        drawdown=make_empty_table(),
+        monthly_performance=make_empty_table(),
+        yearly_performance=make_empty_table(),
+        symbol_distribution=make_empty_table(),
+        weekday_distribution=make_empty_table(),
+    )
+
+    renderer = StreamlitDashboardRenderer(
+        streamlit_module=streamlit
+    )
+
+    renderer.render_analytics_section(
+        analytics
+    )
+
+    streamlit.subheader.assert_called_once_with(
+        "Equity Curve"
+    )
+
+    streamlit.dataframe.assert_called_once_with(
+        [
+            {
+                "Date": "2026-07-01",
+                "Equity": "$100,000.00",
+            },
+            {
+                "Date": "2026-07-02",
+                "Equity": "$101,000.00",
+            },
+        ],
+        use_container_width=True,
+        hide_index=True,
     )

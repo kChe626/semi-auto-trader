@@ -17,6 +17,7 @@ def test_app_configures_streamlit_page(
 
     view_model = Mock()
     view_model.account = Mock()
+    view_model.analytics = Mock()
 
     load_view_model.return_value = view_model
 
@@ -49,6 +50,7 @@ def test_app_displays_dashboard_title(
 
     view_model = Mock()
     view_model.account = Mock()
+    view_model.analytics = Mock()
 
     load_view_model.return_value = view_model
 
@@ -70,7 +72,7 @@ def test_app_displays_dashboard_title(
     "dashboard.streamlit_app."
     "StreamlitDashboardRenderer"
 )
-def test_app_loads_and_renders_account(
+def test_app_loads_and_renders_dashboard(
     renderer_class: Mock,
 ) -> None:
     streamlit = Mock()
@@ -79,6 +81,9 @@ def test_app_loads_and_renders_account(
     view_model = Mock()
     view_model.account = Mock(
         name="account-view-model"
+    )
+    view_model.analytics = Mock(
+        name="analytics-view-model"
     )
 
     load_view_model.return_value = view_model
@@ -101,6 +106,56 @@ def test_app_loads_and_renders_account(
             view_model.account
         )
 
+    renderer.render_analytics_section\
+        .assert_called_once_with(
+            view_model.analytics
+        )
+
+
+@patch(
+    "dashboard.streamlit_app."
+    "StreamlitDashboardRenderer"
+)
+def test_app_renders_account_before_analytics(
+    renderer_class: Mock,
+) -> None:
+    streamlit = Mock()
+    load_view_model = Mock()
+
+    view_model = Mock()
+    view_model.account = Mock(
+        name="account-view-model"
+    )
+    view_model.analytics = Mock(
+        name="analytics-view-model"
+    )
+
+    load_view_model.return_value = view_model
+
+    renderer = renderer_class.return_value
+
+    call_order: list[str] = []
+
+    renderer.render_account_section.side_effect = (
+        lambda account: call_order.append("account")
+    )
+
+    renderer.render_analytics_section.side_effect = (
+        lambda analytics: call_order.append(
+            "analytics"
+        )
+    )
+
+    run_dashboard(
+        load_view_model=load_view_model,
+        streamlit_module=streamlit,
+    )
+
+    assert call_order == [
+        "account",
+        "analytics",
+    ]
+
 
 @patch(
     "dashboard.streamlit_app."
@@ -110,6 +165,7 @@ def test_app_displays_loading_error(
     renderer_class: Mock,
 ) -> None:
     streamlit = Mock()
+
     load_view_model = Mock(
         side_effect=RuntimeError(
             "Alpaca unavailable"
@@ -131,6 +187,7 @@ def test_app_displays_loading_error(
 
 def test_app_stops_after_loading_error() -> None:
     streamlit = Mock()
+
     load_view_model = Mock(
         side_effect=ValueError(
             "database unavailable"
@@ -142,5 +199,15 @@ def test_app_stops_after_loading_error() -> None:
         streamlit_module=streamlit,
     )
 
-    streamlit.title.assert_called_once()
-    streamlit.error.assert_called_once()
+    streamlit.title.assert_called_once_with(
+        "Semi-Auto Trader Dashboard"
+    )
+
+    streamlit.error.assert_called_once_with(
+        "Dashboard data could not be loaded: "
+        "database unavailable"
+    )
+
+    streamlit.header.assert_not_called()
+    streamlit.subheader.assert_not_called()
+    streamlit.dataframe.assert_not_called()

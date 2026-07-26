@@ -69,3 +69,7 @@ def run_dashboard(
     renderer.render_account_section(
         view_model.account
     )
+
+    renderer.render_analytics_section(
+        view_model.analytics
+    )
