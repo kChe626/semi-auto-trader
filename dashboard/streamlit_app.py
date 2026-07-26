@@ -70,6 +70,14 @@ def run_dashboard(
         view_model.account
     )
 
+    renderer.render_scanner_section(
+        view_model.scanner
+    )
+
     renderer.render_analytics_section(
         view_model.analytics
+    )
+
+    renderer.render_trade_history_section(
+        view_model.trade_history
     )

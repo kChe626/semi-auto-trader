@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-from types import SimpleNamespace
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 from dashboard.composition_service import (
     DashboardCompositionService,
@@ -11,80 +10,43 @@ from dashboard.service_factory import (
 )
 
 
-STARTING_EQUITY = 100_000.0
-
-
 def make_factory_dependencies() -> dict[str, Mock]:
     return {
-        "trading_client": Mock(),
-        "closed_trade_repository": Mock(),
-        "performance_statistics": Mock(),
-        "equity_curve": Mock(),
-        "drawdown_calculator": Mock(),
-        "monthly_performance_calculator": Mock(),
-        "yearly_performance_calculator": Mock(),
-        "trade_distribution_calculator": Mock(),
+        "trading_client": Mock(
+            name="trading-client"
+        ),
+        "closed_trade_repository": Mock(
+            name="closed-trade-repository"
+        ),
+        "performance_statistics": Mock(
+            name="performance-statistics"
+        ),
+        "equity_curve": Mock(
+            name="equity-curve"
+        ),
+        "drawdown_calculator": Mock(
+            name="drawdown-calculator"
+        ),
+        "monthly_performance_calculator": Mock(
+            name="monthly-performance-calculator"
+        ),
+        "yearly_performance_calculator": Mock(
+            name="yearly-performance-calculator"
+        ),
+        "trade_distribution_calculator": Mock(
+            name="trade-distribution-calculator"
+        ),
     }
 
 
-def configure_successful_dependencies(
-    dependencies: dict[str, Mock],
+@patch("dashboard.service_factory.DashboardService")
+@patch("dashboard.service_factory.AccountService")
+def test_factory_returns_composition_service(
+    account_service_class: Mock,
+    dashboard_service_class: Mock,
 ) -> None:
-    dependencies[
-        "trading_client"
-    ].get_account.return_value = SimpleNamespace(
-        status="ACTIVE",
-        cash="100000",
-        equity="100000",
-        buying_power="400000",
-        portfolio_value="100000",
-        last_equity="100000",
-        trading_blocked=False,
-        account_blocked=False,
-    )
-
-    dependencies[
-        "trading_client"
-    ].get_all_positions.return_value = []
-
-    dependencies[
-        "closed_trade_repository"
-    ].get_all.return_value = []
-
-    dependencies[
-        "performance_statistics"
-    ].calculate.return_value = "statistics"
-
-    dependencies[
-        "equity_curve"
-    ].calculate.return_value = "equity"
-
-    dependencies[
-        "drawdown_calculator"
-    ].calculate.return_value = "drawdown"
-
-    dependencies[
-        "monthly_performance_calculator"
-    ].calculate.return_value = "monthly"
-
-    dependencies[
-        "yearly_performance_calculator"
-    ].calculate.return_value = "yearly"
-
-    dependencies[
-        "trade_distribution_calculator"
-    ].by_symbol.return_value = "symbols"
-
-    dependencies[
-        "trade_distribution_calculator"
-    ].by_weekday.return_value = "weekdays"
-
-
-def test_factory_returns_composition_service() -> None:
-    dependencies = make_factory_dependencies()
-
     service = create_dashboard_composition_service(
-        **dependencies
+        **make_factory_dependencies()
     )
 
     assert isinstance(
@@ -93,241 +55,196 @@ def test_factory_returns_composition_service() -> None:
     )
 
 
-def test_factory_wires_account_service() -> None:
-    dependencies = make_factory_dependencies()
-
-    configure_successful_dependencies(
-        dependencies
-    )
-
-    service = create_dashboard_composition_service(
-        **dependencies
-    )
-
-    result = (
-        service.load_complete_dashboard_data()
-    )
-
-    assert result.account_data.account.status == (
-        "ACTIVE"
-    )
-
-    assert result.account_data.account.cash == (
-        100000.0
-    )
-
-    assert result.account_data.account.equity == (
-        STARTING_EQUITY
-    )
-
-    assert (
-        result.account_data.account.buying_power
-        == 400000.0
-    )
-
-    dependencies[
-        "trading_client"
-    ].get_account.assert_called_once_with()
-
-    dependencies[
-        "trading_client"
-    ].get_all_positions.assert_called_once_with()
-
-
-def test_factory_wires_repository() -> None:
-    dependencies = make_factory_dependencies()
-
-    configure_successful_dependencies(
-        dependencies
-    )
-
-    trade_one = Mock(name="trade-one")
-    trade_two = Mock(name="trade-two")
-
-    dependencies[
-        "closed_trade_repository"
-    ].get_all.return_value = [
-        trade_one,
-        trade_two,
-    ]
-
-    service = create_dashboard_composition_service(
-        **dependencies
-    )
-
-    result = (
-        service.load_complete_dashboard_data()
-    )
-
-    assert (
-        result.analytics_data.closed_trades
-        == (
-            trade_one,
-            trade_two,
-        )
-    )
-
-    dependencies[
-        "closed_trade_repository"
-    ].get_all.assert_called_once_with()
-
-
-def test_factory_wires_all_analytics_calculators() -> None:
-    dependencies = make_factory_dependencies()
-
-    configure_successful_dependencies(
-        dependencies
-    )
-
-    service = create_dashboard_composition_service(
-        **dependencies
-    )
-
-    result = (
-        service.load_complete_dashboard_data()
-    )
-
-    assert (
-        result.analytics_data.performance_statistics
-        == "statistics"
-    )
-
-    assert (
-        result.analytics_data.equity_curve
-        == "equity"
-    )
-
-    assert (
-        result.analytics_data.drawdown
-        == "drawdown"
-    )
-
-    assert (
-        result.analytics_data.monthly_performance
-        == "monthly"
-    )
-
-    assert (
-        result.analytics_data.yearly_performance
-        == "yearly"
-    )
-
-    assert (
-        result.analytics_data.symbol_distribution
-        == "symbols"
-    )
-
-    assert (
-        result.analytics_data.weekday_distribution
-        == "weekdays"
-    )
-
-
-def test_factory_preserves_same_trade_snapshot() -> None:
-    dependencies = make_factory_dependencies()
-
-    configure_successful_dependencies(
-        dependencies
-    )
-
-    trades = [
-        Mock(name="trade-one"),
-        Mock(name="trade-two"),
-    ]
-
-    dependencies[
-        "closed_trade_repository"
-    ].get_all.return_value = trades
-
-    equity_curve_result = Mock(
-        name="equity-curve-result"
-    )
-
-    dependencies[
-        "equity_curve"
-    ].calculate.return_value = (
-        equity_curve_result
-    )
-
-    service = create_dashboard_composition_service(
-        **dependencies
-    )
-
-    service.load_complete_dashboard_data()
-
-    expected_trades = tuple(trades)
-
-    dependencies[
-        "performance_statistics"
-    ].calculate.assert_called_once_with(
-        expected_trades
-    )
-
-    dependencies[
-        "equity_curve"
-    ].calculate.assert_called_once_with(
-        expected_trades,
-        starting_equity=STARTING_EQUITY,
-    )
-
-    dependencies[
-        "drawdown_calculator"
-    ].calculate.assert_called_once_with(
-        equity_curve_result
-    )
-
-    dependencies[
-        "monthly_performance_calculator"
-    ].calculate.assert_called_once_with(
-        expected_trades
-    )
-
-    dependencies[
-        "yearly_performance_calculator"
-    ].calculate.assert_called_once_with(
-        expected_trades
-    )
-
-    dependencies[
-        "trade_distribution_calculator"
-    ].by_symbol.assert_called_once_with(
-        expected_trades
-    )
-
-    dependencies[
-        "trade_distribution_calculator"
-    ].by_weekday.assert_called_once_with(
-        expected_trades
-    )
-
-
-def test_factory_does_not_load_data_during_creation() -> None:
+@patch("dashboard.service_factory.DashboardService")
+@patch("dashboard.service_factory.AccountService")
+def test_factory_wires_account_service(
+    account_service_class: Mock,
+    dashboard_service_class: Mock,
+) -> None:
     dependencies = make_factory_dependencies()
 
     create_dashboard_composition_service(
         **dependencies
     )
 
-    dependencies[
-        "trading_client"
-    ].get_account.assert_not_called()
+    account_service_class.assert_called_once_with(
+        trading_client=dependencies[
+            "trading_client"
+        ],
+    )
 
-    dependencies[
-        "trading_client"
-    ].get_all_positions.assert_not_called()
 
-    dependencies[
-        "closed_trade_repository"
-    ].get_all.assert_not_called()
+@patch("dashboard.service_factory.DashboardService")
+@patch("dashboard.service_factory.AccountService")
+def test_factory_wires_repository(
+    account_service_class: Mock,
+    dashboard_service_class: Mock,
+) -> None:
+    dependencies = make_factory_dependencies()
 
-    dependencies[
-        "performance_statistics"
-    ].calculate.assert_not_called()
+    create_dashboard_composition_service(
+        **dependencies
+    )
 
-    dependencies[
-        "equity_curve"
-    ].calculate.assert_not_called()
+    dashboard_service_class.assert_called_once()
 
-    dependencies[
-        "drawdown_calculator"
-    ].calculate.assert_not_called()
+    call_kwargs = (
+        dashboard_service_class
+        .call_args
+        .kwargs
+    )
+
+    assert (
+        call_kwargs["closed_trade_repository"]
+        is dependencies[
+            "closed_trade_repository"
+        ]
+    )
+
+
+@patch("dashboard.service_factory.DashboardService")
+@patch("dashboard.service_factory.AccountService")
+def test_factory_wires_all_analytics_calculators(
+    account_service_class: Mock,
+    dashboard_service_class: Mock,
+) -> None:
+    dependencies = make_factory_dependencies()
+
+    create_dashboard_composition_service(
+        **dependencies
+    )
+
+    dashboard_service_class.assert_called_once_with(
+        closed_trade_repository=dependencies[
+            "closed_trade_repository"
+        ],
+        performance_statistics=dependencies[
+            "performance_statistics"
+        ],
+        equity_curve=dependencies[
+            "equity_curve"
+        ],
+        drawdown_calculator=dependencies[
+            "drawdown_calculator"
+        ],
+        monthly_performance_calculator=dependencies[
+            "monthly_performance_calculator"
+        ],
+        yearly_performance_calculator=dependencies[
+            "yearly_performance_calculator"
+        ],
+        trade_distribution_calculator=dependencies[
+            "trade_distribution_calculator"
+        ],
+    )
+
+
+@patch("dashboard.service_factory.scan_market")
+@patch("dashboard.service_factory.DashboardService")
+@patch("dashboard.service_factory.AccountService")
+def test_factory_wires_scanner_loader(
+    account_service_class: Mock,
+    dashboard_service_class: Mock,
+    scan_market: Mock,
+) -> None:
+    account_service = Mock(
+        name="account-service"
+    )
+    analytics_service = Mock(
+        name="analytics-service"
+    )
+
+    account_service_class.return_value = (
+        account_service
+    )
+    dashboard_service_class.return_value = (
+        analytics_service
+    )
+
+    service = create_dashboard_composition_service(
+        **make_factory_dependencies()
+    )
+
+    assert (
+        service._account_service
+        is account_service
+    )
+    assert (
+        service._scanner_loader
+        is scan_market
+    )
+    assert (
+        service._analytics_service
+        is analytics_service
+    )
+
+
+@patch("dashboard.service_factory.scan_market")
+@patch("dashboard.service_factory.DashboardService")
+@patch("dashboard.service_factory.AccountService")
+def test_factory_preserves_service_instances(
+    account_service_class: Mock,
+    dashboard_service_class: Mock,
+    scan_market: Mock,
+) -> None:
+    account_service = Mock(
+        name="account-service"
+    )
+    analytics_service = Mock(
+        name="analytics-service"
+    )
+
+    account_service_class.return_value = (
+        account_service
+    )
+    dashboard_service_class.return_value = (
+        analytics_service
+    )
+
+    service = create_dashboard_composition_service(
+        **make_factory_dependencies()
+    )
+
+    assert (
+        service._account_service
+        is account_service
+    )
+    assert (
+        service._analytics_service
+        is analytics_service
+    )
+
+
+@patch("dashboard.service_factory.scan_market")
+@patch("dashboard.service_factory.DashboardService")
+@patch("dashboard.service_factory.AccountService")
+def test_factory_does_not_load_data_during_creation(
+    account_service_class: Mock,
+    dashboard_service_class: Mock,
+    scan_market: Mock,
+) -> None:
+    account_service = Mock(
+        name="account-service"
+    )
+    analytics_service = Mock(
+        name="analytics-service"
+    )
+
+    account_service_class.return_value = (
+        account_service
+    )
+    dashboard_service_class.return_value = (
+        analytics_service
+    )
+
+    create_dashboard_composition_service(
+        **make_factory_dependencies()
+    )
+
+    account_service.load_account_data\
+        .assert_not_called()
+
+    scan_market.assert_not_called()
+
+    analytics_service.load_dashboard_data\
+        .assert_not_called()

@@ -1,10 +1,17 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime
 from types import SimpleNamespace
 from unittest.mock import Mock
 
+from analytics.drawdown import (
+    DrawdownPoint,
+    DrawdownResult,
+)
+from dashboard.analytics_chart_models import (
+    ChartPointViewModel,
+)
 from dashboard.analytics_presentation_mapper import (
     AnalyticsPresentationMapper,
 )
@@ -80,6 +87,22 @@ def test_map_returns_analytics_section() -> None:
         result,
         AnalyticsSectionViewModel,
     )
+    assert (
+        result.equity_curve_chart.title
+        == "Equity Curve"
+    )
+    assert (
+        result.monthly_performance_chart.title
+        == "Monthly Performance"
+    )
+    assert (
+        result.yearly_performance_chart.title
+        == "Yearly Performance"
+    )
+    assert (
+        result.drawdown_chart.title
+        == "Drawdown"
+    )
 
 
 def test_performance_metrics_are_formatted() -> None:
@@ -151,7 +174,8 @@ def test_negative_currency_is_formatted() -> None:
     )
 
 
-def test_percentage_over_one_is_treated_as_whole_percent() -> None:
+def test_percentage_over_one_is_treated_as_whole_percent(
+) -> None:
     mapper = AnalyticsPresentationMapper()
 
     statistics = {
@@ -356,6 +380,7 @@ def test_empty_results_return_empty_tables() -> None:
 
     assert result.equity_curve.is_empty is True
     assert result.drawdown.is_empty is True
+
     assert (
         result.monthly_performance.is_empty
         is True
@@ -412,3 +437,170 @@ def test_private_object_attributes_are_excluded() -> None:
     assert result.symbol_distribution.rows == (
         ("AAPL",),
     )
+
+
+def test_drawdown_chart_maps_numeric_points() -> None:
+    mapper = AnalyticsPresentationMapper()
+
+    drawdown = (
+        {
+            "date": date(2026, 7, 1),
+            "drawdown": -100.0,
+        },
+        {
+            "date": date(2026, 7, 2),
+            "drawdown": -250.5,
+        },
+    )
+
+    result = mapper.map_drawdown_chart(
+        drawdown
+    )
+
+    assert result.title == "Drawdown"
+    assert len(result.points) == 2
+
+    assert result.points[0].x == date(
+        2026,
+        7,
+        1,
+    )
+    assert result.points[0].y == -100.0
+
+    assert result.points[1].x == date(
+        2026,
+        7,
+        2,
+    )
+    assert result.points[1].y == -250.5
+
+
+def test_drawdown_chart_supports_records_container(
+) -> None:
+    mapper = AnalyticsPresentationMapper()
+
+    drawdown = SimpleNamespace(
+        records=(
+            {
+                "date": datetime(
+                    2026,
+                    7,
+                    3,
+                    15,
+                    30,
+                ),
+                "drawdown": -75.25,
+            },
+        )
+    )
+
+    result = mapper.map_drawdown_chart(
+        drawdown
+    )
+
+    assert result.title == "Drawdown"
+    assert len(result.points) == 1
+    assert result.points[0].x == datetime(
+        2026,
+        7,
+        3,
+        15,
+        30,
+    )
+    assert result.points[0].y == -75.25
+
+
+def test_drawdown_chart_supports_drawdown_result(
+) -> None:
+    mapper = AnalyticsPresentationMapper()
+
+    drawdown = DrawdownResult(
+        starting_equity=100000.0,
+        ending_equity=99500.0,
+        peak_equity=100000.0,
+        current_drawdown_amount=-500.0,
+        current_drawdown_percent=-0.005,
+        maximum_drawdown_amount=-500.0,
+        maximum_drawdown_percent=-0.005,
+        maximum_drawdown_trade_id="trade-2",
+        recovered=False,
+        points=(
+            DrawdownPoint(
+                trade_id="trade-1",
+                symbol="AAPL",
+                equity=100000.0,
+                peak_equity=100000.0,
+                drawdown_amount=0.0,
+                drawdown_percent=0.0,
+            ),
+            DrawdownPoint(
+                trade_id="trade-2",
+                symbol="MSFT",
+                equity=99500.0,
+                peak_equity=100000.0,
+                drawdown_amount=-500.0,
+                drawdown_percent=-0.005,
+            ),
+        ),
+    )
+
+    result = mapper.map_drawdown_chart(
+        drawdown
+    )
+
+    assert result.title == "Drawdown"
+
+    assert result.points == (
+        ChartPointViewModel(
+            x="trade-1",
+            y=0.0,
+        ),
+        ChartPointViewModel(
+            x="trade-2",
+            y=-500.0,
+        ),
+    )
+
+
+def test_drawdown_chart_ignores_invalid_records() -> None:
+    mapper = AnalyticsPresentationMapper()
+
+    drawdown = (
+        {
+            "date": date(2026, 7, 1),
+        },
+        {
+            "drawdown": -100.0,
+        },
+        {
+            "date": date(2026, 7, 2),
+            "drawdown": "invalid",
+        },
+        {
+            "date": date(2026, 7, 3),
+            "drawdown": -125.0,
+        },
+    )
+
+    result = mapper.map_drawdown_chart(
+        drawdown
+    )
+
+    assert result.title == "Drawdown"
+    assert len(result.points) == 1
+    assert result.points[0].x == date(
+        2026,
+        7,
+        3,
+    )
+    assert result.points[0].y == -125.0
+
+
+def test_drawdown_chart_is_empty_when_no_data_exists(
+) -> None:
+    mapper = AnalyticsPresentationMapper()
+
+    result = mapper.map_drawdown_chart(())
+
+    assert result.title == "Drawdown"
+    assert result.points == ()

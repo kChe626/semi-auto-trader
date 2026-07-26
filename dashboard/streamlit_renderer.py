@@ -15,6 +15,9 @@ from dashboard.presentation_models import (
 from dashboard.scanner_presentation_models import (
     ScannerSectionViewModel,
 )
+from dashboard.trade_history_presentation_models import (
+    TradeHistorySectionViewModel,
+)
 
 
 class MetricContainerProtocol(Protocol):
@@ -50,6 +53,15 @@ class StreamlitProtocol(Protocol):
         ...
 
     def line_chart(
+        self,
+        data: Any,
+        *,
+        x: str,
+        y: str,
+    ) -> Any:
+        ...
+
+    def bar_chart(
         self,
         data: Any,
         *,
@@ -143,9 +155,7 @@ class StreamlitDashboardRenderer:
 
         self._render_analytics_metrics(analytics)
 
-        if not self._has_analytics_table_data(
-            analytics
-        ):
+        if self._analytics_is_empty(analytics):
             self._st.info(
                 "No closed trades have been recorded yet. "
                 "Performance analytics will appear after "
@@ -153,7 +163,7 @@ class StreamlitDashboardRenderer:
             )
             return
 
-        self._render_equity_curve_chart(
+        self._render_chart(
             analytics.equity_curve_chart
         )
 
@@ -162,9 +172,8 @@ class StreamlitDashboardRenderer:
             table=analytics.equity_curve,
         )
 
-        self._render_analytics_table(
-            title="Drawdown",
-            table=analytics.drawdown,
+        self._render_bar_chart(
+            analytics.monthly_performance_chart
         )
 
         self._render_analytics_table(
@@ -172,9 +181,22 @@ class StreamlitDashboardRenderer:
             table=analytics.monthly_performance,
         )
 
+        self._render_bar_chart(
+            analytics.yearly_performance_chart
+        )
+
         self._render_analytics_table(
             title="Yearly Performance",
             table=analytics.yearly_performance,
+        )
+
+        self._render_chart(
+            analytics.drawdown_chart
+        )
+
+        self._render_analytics_table(
+            title="Drawdown",
+            table=analytics.drawdown,
         )
 
         self._render_analytics_table(
@@ -185,6 +207,49 @@ class StreamlitDashboardRenderer:
         self._render_analytics_table(
             title="Trades by Weekday",
             table=analytics.weekday_distribution,
+        )
+
+    def render_trade_history_section(
+        self,
+        trade_history: TradeHistorySectionViewModel,
+    ) -> None:
+        """
+        Render completed-trade history.
+        """
+
+        self._st.header("Trade History")
+
+        if not trade_history.has_rows:
+            self._st.info(
+                "No completed trades available."
+            )
+            return
+
+        rows = [
+            {
+                "Trade ID": row.trade_id,
+                "Symbol": row.symbol,
+                "Side": row.side,
+                "Opened At": row.opened_at,
+                "Closed At": row.closed_at,
+                "Quantity": row.quantity,
+                "Entry Price": row.entry_price,
+                "Exit Price": row.exit_price,
+                "Realized P/L": (
+                    row.realized_profit_loss
+                ),
+                "R Multiple": row.r_multiple,
+                "Holding Duration": (
+                    row.holding_duration
+                ),
+            }
+            for row in trade_history.rows
+        ]
+
+        self._st.dataframe(
+            rows,
+            use_container_width=True,
+            hide_index=True,
         )
 
     def _render_primary_metrics(
@@ -286,7 +351,11 @@ class StreamlitDashboardRenderer:
         if not metrics:
             return
 
-        for start_index in range(0, len(metrics), 4):
+        for start_index in range(
+            0,
+            len(metrics),
+            4,
+        ):
             metric_group = metrics[
                 start_index:start_index + 4
             ]
@@ -305,7 +374,7 @@ class StreamlitDashboardRenderer:
                     metric.value,
                 )
 
-    def _render_equity_curve_chart(
+    def _render_chart(
         self,
         chart: AnalyticsChartViewModel,
     ) -> None:
@@ -314,16 +383,41 @@ class StreamlitDashboardRenderer:
 
         rows = [
             {
-                "Date": point.x,
-                "Equity": point.y,
+                "Period": point.x,
+                chart.title: point.y,
             }
             for point in chart.points
         ]
 
+        self._st.subheader(chart.title)
+
         self._st.line_chart(
             rows,
-            x="Date",
-            y="Equity",
+            x="Period",
+            y=chart.title,
+        )
+
+    def _render_bar_chart(
+        self,
+        chart: AnalyticsChartViewModel,
+    ) -> None:
+        if not chart.points:
+            return
+
+        rows = [
+            {
+                "Period": point.x,
+                chart.title: point.y,
+            }
+            for point in chart.points
+        ]
+
+        self._st.subheader(chart.title)
+
+        self._st.bar_chart(
+            rows,
+            x="Period",
+            y=chart.title,
         )
 
     def _render_analytics_table(
@@ -355,17 +449,22 @@ class StreamlitDashboardRenderer:
         )
 
     @staticmethod
-    def _has_analytics_table_data(
+    def _analytics_is_empty(
         analytics: AnalyticsSectionViewModel,
     ) -> bool:
-        return any(
-            table.rows
-            for table in (
-                analytics.equity_curve,
-                analytics.drawdown,
-                analytics.monthly_performance,
-                analytics.yearly_performance,
-                analytics.symbol_distribution,
-                analytics.weekday_distribution,
-            )
+        return (
+            not analytics.metrics
+            and not analytics.equity_curve.rows
+            and not analytics.equity_curve_chart.points
+            and not analytics.monthly_performance.rows
+            and not analytics.monthly_performance_chart.points
+            and not analytics.yearly_performance.rows
+            and not analytics.yearly_performance_chart.points
+            and not analytics.drawdown.rows
+            and not analytics.drawdown_chart.points
+            and not analytics.symbol_distribution.rows
+            and not analytics.weekday_distribution.rows
         )
+
+
+StreamlitRenderer = StreamlitDashboardRenderer

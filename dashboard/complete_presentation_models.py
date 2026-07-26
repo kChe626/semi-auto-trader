@@ -8,17 +8,17 @@ from dashboard.analytics_presentation_models import (
 from dashboard.presentation_models import (
     AccountSectionViewModel,
 )
+from dashboard.scanner_presentation_models import (
+    ScannerSectionViewModel,
+)
+from dashboard.trade_history_presentation_models import (
+    TradeHistorySectionViewModel,
+)
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class CompleteDashboardViewModel:
-    """
-    Complete display-ready dashboard model.
-
-    This object contains only presentation-ready values.
-    It has no broker, database, analytics, or Streamlit
-    dependencies.
-    """
-
     account: AccountSectionViewModel
+    scanner: ScannerSectionViewModel
     analytics: AnalyticsSectionViewModel
+    trade_history: TradeHistorySectionViewModel

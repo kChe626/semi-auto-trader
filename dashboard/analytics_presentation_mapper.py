@@ -5,6 +5,10 @@ from datetime import date, datetime
 from enum import Enum
 from typing import Any, Iterable, Mapping
 
+from dashboard.analytics_chart_models import (
+    AnalyticsChartViewModel,
+    ChartPointViewModel,
+)
 from dashboard.analytics_presentation_models import (
     AnalyticsMetricViewModel,
     AnalyticsSectionViewModel,
@@ -19,7 +23,7 @@ _MISSING = object()
 class AnalyticsPresentationMapper:
     """
     Converts analytics-domain results into display-ready
-    metrics and tables.
+    metrics, tables, and charts.
 
     The mapper performs formatting only. It does not
     calculate performance statistics or access storage.
@@ -98,6 +102,24 @@ class AnalyticsPresentationMapper:
             equity_curve=self._map_table(
                 dashboard_data.equity_curve
             ),
+            equity_curve_chart=(
+                self.map_equity_curve_chart(
+                    dashboard_data.equity_curve
+                )
+            ),
+            monthly_performance_chart=(
+                self.map_monthly_performance_chart(
+                    dashboard_data.monthly_performance
+                )
+            ),
+            yearly_performance_chart=(
+                self.map_yearly_performance_chart(
+                    dashboard_data.yearly_performance
+                )
+            ),
+            drawdown_chart=self.map_drawdown_chart(
+                dashboard_data.drawdown
+            ),
             drawdown=self._map_table(
                 dashboard_data.drawdown
             ),
@@ -113,6 +135,272 @@ class AnalyticsPresentationMapper:
             weekday_distribution=self._map_table(
                 dashboard_data.weekday_distribution
             ),
+        )
+
+    def map_equity_curve_chart(
+        self,
+        equity_curve: Any,
+    ) -> AnalyticsChartViewModel:
+        """
+        Convert equity-curve points into numeric chart
+        values.
+
+        Unsupported or incomplete records are ignored.
+        """
+
+        raw_points = getattr(
+            equity_curve,
+            "points",
+            equity_curve,
+        )
+
+        if raw_points is None:
+            raw_points = ()
+
+        chart_points: list[ChartPointViewModel] = []
+
+        for point in raw_points:
+            closed_at = self._find_value(
+                point,
+                ("closed_at",),
+            )
+
+            equity = self._find_value(
+                point,
+                ("equity",),
+            )
+
+            if (
+                closed_at is _MISSING
+                or equity is _MISSING
+                or not isinstance(
+                    closed_at,
+                    datetime,
+                )
+            ):
+                continue
+
+            try:
+                numeric_equity = float(equity)
+            except (TypeError, ValueError):
+                continue
+
+            chart_points.append(
+                ChartPointViewModel(
+                    x=closed_at,
+                    y=numeric_equity,
+                )
+            )
+
+        return AnalyticsChartViewModel(
+            title="Equity Curve",
+            points=tuple(chart_points),
+        )
+
+    def map_monthly_performance_chart(
+        self,
+        monthly_performance: Any,
+    ) -> AnalyticsChartViewModel:
+        """
+        Convert monthly-performance records into numeric
+        chart values.
+
+        Records without a month or realized profit/loss
+        value are ignored.
+        """
+
+        raw_records = getattr(
+            monthly_performance,
+            "records",
+            monthly_performance,
+        )
+
+        if raw_records is None:
+            raw_records = ()
+
+        chart_points: list[ChartPointViewModel] = []
+
+        for record in raw_records:
+            month = self._find_value(
+                record,
+                ("month",),
+            )
+
+            realized_profit_loss = self._find_value(
+                record,
+                (
+                    "realized_profit_loss",
+                    "net_profit_loss",
+                    "total_profit_loss",
+                    "total_pnl",
+                    "net_pnl",
+                ),
+            )
+
+            if (
+                month is _MISSING
+                or realized_profit_loss is _MISSING
+            ):
+                continue
+
+            try:
+                numeric_profit_loss = float(
+                    realized_profit_loss
+                )
+            except (TypeError, ValueError):
+                continue
+
+            chart_points.append(
+                ChartPointViewModel(
+                    x=str(month),
+                    y=numeric_profit_loss,
+                )
+            )
+
+        return AnalyticsChartViewModel(
+            title="Monthly Performance",
+            points=tuple(chart_points),
+        )
+
+    def map_yearly_performance_chart(
+        self,
+        yearly_performance: Any,
+    ) -> AnalyticsChartViewModel:
+        """
+        Convert yearly-performance records into numeric
+        chart values.
+
+        Records without a year or realized profit/loss
+        value are ignored.
+        """
+
+        raw_records = getattr(
+            yearly_performance,
+            "records",
+            yearly_performance,
+        )
+
+        if raw_records is None:
+            raw_records = ()
+
+        chart_points: list[ChartPointViewModel] = []
+
+        for record in raw_records:
+            year = self._find_value(
+                record,
+                ("year",),
+            )
+
+            realized_profit_loss = self._find_value(
+                record,
+                (
+                    "realized_profit_loss",
+                    "net_profit_loss",
+                    "total_profit_loss",
+                    "total_pnl",
+                    "net_pnl",
+                ),
+            )
+
+            if (
+                year is _MISSING
+                or realized_profit_loss is _MISSING
+            ):
+                continue
+
+            try:
+                numeric_profit_loss = float(
+                    realized_profit_loss
+                )
+            except (TypeError, ValueError):
+                continue
+
+            chart_points.append(
+                ChartPointViewModel(
+                    x=str(year),
+                    y=numeric_profit_loss,
+                )
+            )
+
+        return AnalyticsChartViewModel(
+            title="Yearly Performance",
+            points=tuple(chart_points),
+        )
+
+    def map_drawdown_chart(
+        self,
+        drawdown: Any,
+    ) -> AnalyticsChartViewModel:
+        """
+        Convert drawdown records into numeric chart values.
+
+        DrawdownResult objects expose point data through
+        the points attribute. Legacy records containers
+        and direct iterables remain supported.
+        """
+
+        raw_records = getattr(
+            drawdown,
+            "points",
+            _MISSING,
+        )
+
+        if raw_records is _MISSING:
+            raw_records = getattr(
+                drawdown,
+                "records",
+                drawdown,
+            )
+
+        if raw_records is None:
+            raw_records = ()
+
+        chart_points: list[ChartPointViewModel] = []
+
+        for record in raw_records:
+            drawdown_axis = self._find_value(
+                record,
+                (
+                    "date",
+                    "trade_id",
+                ),
+            )
+
+            drawdown_value = self._find_value(
+                record,
+                (
+                    "drawdown",
+                    "drawdown_amount",
+                ),
+            )
+
+            if (
+                drawdown_axis is _MISSING
+                or drawdown_value is _MISSING
+                or not isinstance(
+                    drawdown_axis,
+                    (str, date, datetime),
+                )
+            ):
+                continue
+
+            try:
+                numeric_drawdown = float(
+                    drawdown_value
+                )
+            except (TypeError, ValueError):
+                continue
+
+            chart_points.append(
+                ChartPointViewModel(
+                    x=drawdown_axis,
+                    y=numeric_drawdown,
+                )
+            )
+
+        return AnalyticsChartViewModel(
+            title="Drawdown",
+            points=tuple(chart_points),
         )
 
     def _map_metrics(
@@ -259,8 +547,7 @@ class AnalyticsPresentationMapper:
         if hasattr(value, "__dict__"):
             return {
                 key: item
-                for key, item
-                in vars(value).items()
+                for key, item in vars(value).items()
                 if not key.startswith("_")
             }
 
@@ -347,7 +634,9 @@ class AnalyticsPresentationMapper:
             )
 
         if isinstance(value, date):
-            return value.strftime("%Y-%m-%d")
+            return value.strftime(
+                "%Y-%m-%d"
+            )
 
         if isinstance(value, float):
             return f"{value:,.2f}"
@@ -358,4 +647,7 @@ class AnalyticsPresentationMapper:
     def _format_column_name(
         value: str,
     ) -> str:
-        return value.replace("_", " ").title()
+        return value.replace(
+            "_",
+            " ",
+        ).title()

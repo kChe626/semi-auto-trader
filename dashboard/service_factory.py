@@ -15,6 +15,7 @@ from dashboard.dashboard_service import (
     TradeAnalyticsCalculatorProtocol,
     TradeDistributionCalculatorProtocol,
 )
+from scanner.scanner import scan_market
 
 
 def create_dashboard_composition_service(
@@ -43,9 +44,12 @@ def create_dashboard_composition_service(
     """
     Create the complete dashboard backend service graph.
 
-    Environment loading, SQLite initialization, and broker
-    authentication remain outside this factory. This makes
-    the factory deterministic and safe to import in tests.
+    Environment loading, SQLite initialization, broker
+    authentication, presentation mapping, and Streamlit
+    rendering remain outside this factory.
+
+    Keeping those responsibilities outside the factory
+    makes it deterministic and safe to import in tests.
     """
 
     account_service = AccountService(
@@ -74,5 +78,6 @@ def create_dashboard_composition_service(
 
     return DashboardCompositionService(
         account_service=account_service,
+        scanner_loader=scan_market,
         analytics_service=analytics_service,
     )
