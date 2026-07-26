@@ -2,6 +2,9 @@ from __future__ import annotations
 
 from typing import Any, Protocol, Sequence
 
+from dashboard.analytics_chart_models import (
+    AnalyticsChartViewModel,
+)
 from dashboard.analytics_presentation_models import (
     AnalyticsSectionViewModel,
     AnalyticsTableViewModel,
@@ -43,6 +46,15 @@ class StreamlitProtocol(Protocol):
         *,
         use_container_width: bool,
         hide_index: bool,
+    ) -> Any:
+        ...
+
+    def line_chart(
+        self,
+        data: Any,
+        *,
+        x: str,
+        y: str,
     ) -> Any:
         ...
 
@@ -140,6 +152,10 @@ class StreamlitDashboardRenderer:
                 "the first completed trade."
             )
             return
+
+        self._render_equity_curve_chart(
+            analytics.equity_curve_chart
+        )
 
         self._render_analytics_table(
             title="Equity Curve",
@@ -288,6 +304,27 @@ class StreamlitDashboardRenderer:
                     metric.label,
                     metric.value,
                 )
+
+    def _render_equity_curve_chart(
+        self,
+        chart: AnalyticsChartViewModel,
+    ) -> None:
+        if not chart.points:
+            return
+
+        rows = [
+            {
+                "Date": point.x,
+                "Equity": point.y,
+            }
+            for point in chart.points
+        ]
+
+        self._st.line_chart(
+            rows,
+            x="Date",
+            y="Equity",
+        )
 
     def _render_analytics_table(
         self,

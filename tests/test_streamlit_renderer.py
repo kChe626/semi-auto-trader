@@ -2,6 +2,10 @@ from __future__ import annotations
 
 from unittest.mock import Mock
 
+from dashboard.analytics_chart_models import (
+    AnalyticsChartViewModel,
+    ChartPointViewModel,
+)
 from dashboard.analytics_presentation_models import (
     AnalyticsMetricViewModel,
     AnalyticsSectionViewModel,
@@ -17,9 +21,7 @@ from dashboard.streamlit_renderer import (
 )
 
 
-def make_account_metrics() -> (
-    AccountMetricsViewModel
-):
+def make_account_metrics() -> AccountMetricsViewModel:
     return AccountMetricsViewModel(
         status="ACTIVE",
         cash="$75,000.00",
@@ -53,12 +55,18 @@ def make_empty_table() -> AnalyticsTableViewModel:
     )
 
 
-def make_empty_analytics() -> (
-    AnalyticsSectionViewModel
-):
+def make_empty_chart() -> AnalyticsChartViewModel:
+    return AnalyticsChartViewModel(
+        title="Equity Curve",
+        points=(),
+    )
+
+
+def make_empty_analytics() -> AnalyticsSectionViewModel:
     return AnalyticsSectionViewModel(
         metrics=(),
         equity_curve=make_empty_table(),
+        equity_curve_chart=make_empty_chart(),
         drawdown=make_empty_table(),
         monthly_performance=make_empty_table(),
         yearly_performance=make_empty_table(),
@@ -130,30 +138,26 @@ def test_renderer_displays_primary_metrics() -> None:
 
     renderer.render_account_section(account)
 
-    primary_columns[0].metric\
-        .assert_called_once_with(
-            "Portfolio Value",
-            "$101,250.00",
-            "$1,250.00 (1.25%)",
-        )
+    primary_columns[0].metric.assert_called_once_with(
+        "Portfolio Value",
+        "$101,250.00",
+        "$1,250.00 (1.25%)",
+    )
 
-    primary_columns[1].metric\
-        .assert_called_once_with(
-            "Equity",
-            "$101,250.00",
-        )
+    primary_columns[1].metric.assert_called_once_with(
+        "Equity",
+        "$101,250.00",
+    )
 
-    primary_columns[2].metric\
-        .assert_called_once_with(
-            "Cash",
-            "$75,000.00",
-        )
+    primary_columns[2].metric.assert_called_once_with(
+        "Cash",
+        "$75,000.00",
+    )
 
-    primary_columns[3].metric\
-        .assert_called_once_with(
-            "Buying Power",
-            "$300,000.00",
-        )
+    primary_columns[3].metric.assert_called_once_with(
+        "Buying Power",
+        "$300,000.00",
+    )
 
 
 def test_renderer_displays_secondary_metrics() -> None:
@@ -188,17 +192,15 @@ def test_renderer_displays_secondary_metrics() -> None:
 
     renderer.render_account_section(account)
 
-    secondary_columns[0].metric\
-        .assert_called_once_with(
-            "Trading Status",
-            "Enabled",
-        )
+    secondary_columns[0].metric.assert_called_once_with(
+        "Trading Status",
+        "Enabled",
+    )
 
-    secondary_columns[1].metric\
-        .assert_called_once_with(
-            "Open Positions",
-            "1",
-        )
+    secondary_columns[1].metric.assert_called_once_with(
+        "Open Positions",
+        "1",
+    )
 
 
 def test_renderer_displays_no_positions_message() -> None:
@@ -311,6 +313,7 @@ def test_renderer_displays_empty_analytics_message() -> None:
     )
 
     streamlit.dataframe.assert_not_called()
+    streamlit.line_chart.assert_not_called()
 
 
 def test_renderer_displays_analytics_metrics() -> None:
@@ -321,9 +324,7 @@ def test_renderer_displays_analytics_metrics() -> None:
         Mock(),
     ]
 
-    streamlit.columns.return_value = (
-        metric_columns
-    )
+    streamlit.columns.return_value = metric_columns
 
     analytics = AnalyticsSectionViewModel(
         metrics=(
@@ -337,6 +338,7 @@ def test_renderer_displays_analytics_metrics() -> None:
             ),
         ),
         equity_curve=make_empty_table(),
+        equity_curve_chart=make_empty_chart(),
         drawdown=make_empty_table(),
         monthly_performance=make_empty_table(),
         yearly_performance=make_empty_table(),
@@ -354,17 +356,15 @@ def test_renderer_displays_analytics_metrics() -> None:
 
     streamlit.columns.assert_called_once_with(2)
 
-    metric_columns[0].metric\
-        .assert_called_once_with(
-            "Total Trades",
-            "10",
-        )
+    metric_columns[0].metric.assert_called_once_with(
+        "Total Trades",
+        "10",
+    )
 
-    metric_columns[1].metric\
-        .assert_called_once_with(
-            "Win Rate",
-            "60.00%",
-        )
+    metric_columns[1].metric.assert_called_once_with(
+        "Win Rate",
+        "60.00%",
+    )
 
 
 def test_renderer_displays_analytics_table() -> None:
@@ -390,6 +390,7 @@ def test_renderer_displays_analytics_table() -> None:
     analytics = AnalyticsSectionViewModel(
         metrics=(),
         equity_curve=equity_curve,
+        equity_curve_chart=make_empty_chart(),
         drawdown=make_empty_table(),
         monthly_performance=make_empty_table(),
         yearly_performance=make_empty_table(),
@@ -423,3 +424,115 @@ def test_renderer_displays_analytics_table() -> None:
         use_container_width=True,
         hide_index=True,
     )
+
+    streamlit.line_chart.assert_not_called()
+
+
+def test_renderer_displays_equity_curve_chart() -> None:
+    streamlit = Mock()
+
+    equity_curve = AnalyticsTableViewModel(
+        columns=(
+            "Date",
+            "Equity",
+        ),
+        rows=(
+            (
+                "2026-07-01",
+                "$100,000.00",
+            ),
+            (
+                "2026-07-02",
+                "$101,000.00",
+            ),
+        ),
+    )
+
+    equity_curve_chart = AnalyticsChartViewModel(
+        title="Equity Curve",
+        points=(
+            ChartPointViewModel(
+                x="2026-07-01",
+                y=100000.0,
+            ),
+            ChartPointViewModel(
+                x="2026-07-02",
+                y=101000.0,
+            ),
+        ),
+    )
+
+    analytics = AnalyticsSectionViewModel(
+        metrics=(),
+        equity_curve=equity_curve,
+        equity_curve_chart=equity_curve_chart,
+        drawdown=make_empty_table(),
+        monthly_performance=make_empty_table(),
+        yearly_performance=make_empty_table(),
+        symbol_distribution=make_empty_table(),
+        weekday_distribution=make_empty_table(),
+    )
+
+    renderer = StreamlitDashboardRenderer(
+        streamlit_module=streamlit
+    )
+
+    renderer.render_analytics_section(
+        analytics
+    )
+
+    streamlit.line_chart.assert_called_once_with(
+        [
+            {
+                "Date": "2026-07-01",
+                "Equity": 100000.0,
+            },
+            {
+                "Date": "2026-07-02",
+                "Equity": 101000.0,
+            },
+        ],
+        x="Date",
+        y="Equity",
+    )
+
+    streamlit.dataframe.assert_called_once()
+
+
+def test_renderer_skips_empty_equity_curve_chart() -> None:
+    streamlit = Mock()
+
+    equity_curve = AnalyticsTableViewModel(
+        columns=(
+            "Date",
+            "Equity",
+        ),
+        rows=(
+            (
+                "2026-07-01",
+                "$100,000.00",
+            ),
+        ),
+    )
+
+    analytics = AnalyticsSectionViewModel(
+        metrics=(),
+        equity_curve=equity_curve,
+        equity_curve_chart=make_empty_chart(),
+        drawdown=make_empty_table(),
+        monthly_performance=make_empty_table(),
+        yearly_performance=make_empty_table(),
+        symbol_distribution=make_empty_table(),
+        weekday_distribution=make_empty_table(),
+    )
+
+    renderer = StreamlitDashboardRenderer(
+        streamlit_module=streamlit
+    )
+
+    renderer.render_analytics_section(
+        analytics
+    )
+
+    streamlit.line_chart.assert_not_called()
+    streamlit.dataframe.assert_called_once()
