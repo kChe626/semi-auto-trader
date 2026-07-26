@@ -1,7 +1,10 @@
+from __future__ import annotations
+
 from broker.alpaca_client import create_trading_client
 from broker.order_confirmation import confirm_paper_order
 from broker.order_executor import OrderExecutor
 from broker.order_verifier import verify_submitted_order
+from broker.position_monitor import PositionMonitor
 from broker.preflight_service import run_broker_preflight
 from config.trading_config import (
     ALLOW_LONG_TRADES,
@@ -14,7 +17,10 @@ from config.trading_config import (
     STOP_LOSS_PERCENT,
 )
 from config.watchlist import WATCHLIST
-from database.journal_service import record_plan_safely
+from database.journal_service import (
+    record_event_safely,
+    record_plan_safely,
+)
 from database.trade_journal import TradeJournal
 from notifications.notification_service import (
     NotificationSender,
@@ -29,6 +35,12 @@ from risk.signal_to_plan import create_trade_plan_from_signal
 from scanner.market_filter import market_is_bullish
 from scanner.scanner import scan_market
 from scanner.trade_ranker import rank_trade_plans
+from trade_management.exit_reconciler import ExitReconciler
+from trade_management.lifecycle_engine import TradeLifecycleEngine
+from trade_management.position_reconciler import PositionReconciler
+from trade_management.state_reconciler import TradeStateReconciler
+from trade_management.trade_identity import create_trade_id
+from trade_management.trade_manager import TradeManager
 
 
 def signal_direction_is_allowed(signal_type: str) -> bool:
@@ -43,6 +55,59 @@ def signal_direction_is_allowed(signal_type: str) -> bool:
     return False
 
 
+def synchronize_broker_state(
+    *,
+    trading_client,
+    journal: TradeJournal | None,
+    notification_sender: NotificationSender | None,
+) -> bool:
+    if journal is None:
+        return True
+
+    try:
+        monitor = PositionMonitor(trading_client)
+
+        order_reconciler = TradeStateReconciler(journal)
+        position_reconciler = PositionReconciler(journal)
+        exit_reconciler = ExitReconciler(journal)
+
+        lifecycle_engine = TradeLifecycleEngine(
+            monitor=monitor,
+            order_reconciler=order_reconciler,
+            position_reconciler=position_reconciler,
+            exit_reconciler=exit_reconciler,
+        )
+
+        trade_manager = TradeManager(lifecycle_engine)
+        trade_manager.start_cycle()
+
+    except Exception as error:
+        message = (
+            "Unable to synchronize broker state: "
+            f"{error}"
+        )
+
+        print(message)
+
+        send_notification_safely(
+            notification_sender,
+            (
+                "⚠️ LIFECYCLE SYNC ERROR\n\n"
+                f"{message}"
+            ),
+        )
+
+        return False
+
+    print(
+        "Broker orders and positions "
+        "synchronized successfully."
+    )
+    print()
+
+    return True
+
+
 def main(
     notification_sender: NotificationSender | None = None,
     journal: TradeJournal | None = None,
@@ -52,10 +117,11 @@ def main(
     try:
         account = trading_client.get_account()
         account_equity = float(account.equity)
+
     except Exception as error:
         message = (
-            "Unable to retrieve Alpaca account information: "
-            f"{error}"
+            "Unable to retrieve Alpaca account "
+            f"information: {error}"
         )
 
         print(message)
@@ -66,14 +132,33 @@ def main(
         )
         return
 
+    synchronized = synchronize_broker_state(
+        trading_client=trading_client,
+        journal=journal,
+        notification_sender=notification_sender,
+    )
+
+    if not synchronized:
+        print(
+            "Trading cycle stopped because broker "
+            "state could not be synchronized."
+        )
+        return
+
     print("=" * 60)
     print("SEMI-AUTOMATED PAPER TRADER")
     print("=" * 60)
     print(f"Account Equity: ${account_equity:,.2f}")
     print(f"Watchlist Size: {len(WATCHLIST)}")
     print(f"Minimum Score: {MINIMUM_TRADE_SCORE:.2f}")
-    print(f"Long Trades: {'Enabled' if ALLOW_LONG_TRADES else 'Disabled'}")
-    print(f"Short Trades: {'Enabled' if ALLOW_SHORT_TRADES else 'Disabled'}")
+    print(
+        "Long Trades: "
+        f"{'Enabled' if ALLOW_LONG_TRADES else 'Disabled'}"
+    )
+    print(
+        "Short Trades: "
+        f"{'Enabled' if ALLOW_SHORT_TRADES else 'Disabled'}"
+    )
     print(
         "Paper Execution: "
         f"{'Enabled' if EXECUTION_ENABLED else 'Disabled'}"
@@ -82,6 +167,7 @@ def main(
 
     try:
         bullish_market = market_is_bullish()
+
     except Exception as error:
         message = (
             "Unable to evaluate the market trend: "
@@ -101,23 +187,28 @@ def main(
     print("=" * 60)
 
     if not bullish_market:
-        print("SPY is meaningfully below its 50-day SMA.")
+        print(
+            "SPY is meaningfully below its "
+            "50-day SMA."
+        )
         print("No new long trades today.")
 
         send_notification_safely(
             notification_sender,
             (
                 "📉 NO TRADES TODAY\n\n"
-                "SPY is meaningfully below its 50-day SMA.\n"
-                "The market filter blocked new long trades."
+                "SPY is meaningfully below its "
+                "50-day SMA.\n"
+                "The market filter blocked "
+                "new long trades."
             ),
         )
         return
 
     print("Market filter passed.")
     print(
-        "SPY is bullish or within the neutral range "
-        "of its 50-day SMA."
+        "SPY is bullish or within the neutral "
+        "range of its 50-day SMA."
     )
     print()
     print(f"Scanning {len(WATCHLIST)} symbols...")
@@ -138,6 +229,7 @@ def main(
 
     try:
         signals = scan_market()
+
     except Exception as error:
         message = f"Market scan failed: {error}"
 
@@ -169,38 +261,89 @@ def main(
     print("=" * 60)
 
     for signal in signals:
-        signal_type = str(signal.signal_type).upper()
+        signal_type = str(
+            signal.signal_type
+        ).upper()
 
-        if not signal_direction_is_allowed(signal_type):
+        if not signal_direction_is_allowed(
+            signal_type
+        ):
             if signal_type == "BUY":
-                reason = "long trades are disabled"
+                reason = "Long trades are disabled"
+
             elif signal_type == "SELL":
-                reason = "short selling is disabled"
+                reason = "Short selling is disabled"
+
             else:
-                reason = f"unsupported signal type: {signal_type}"
+                reason = (
+                    "Unsupported signal type: "
+                    f"{signal_type}"
+                )
 
             print(
-                f"Skipping {signal.symbol}: {reason}."
+                f"Skipping {signal.symbol}: "
+                f"{reason.lower()}."
             )
+
+            record_event_safely(
+                journal,
+                symbol=signal.symbol,
+                status="direction_filtered",
+                signal_type=signal_type,
+                reason=reason,
+            )
+
             continue
 
-        plan = create_trade_plan_from_signal(
-            signal=signal,
-            account_equity=account_equity,
-            risk_percent=RISK_PERCENT,
-            stop_loss_percent=STOP_LOSS_PERCENT,
-            reward_risk_ratio=REWARD_RISK_RATIO,
-        )
+        try:
+            plan = create_trade_plan_from_signal(
+                signal=signal,
+                account_equity=account_equity,
+                risk_percent=RISK_PERCENT,
+                stop_loss_percent=STOP_LOSS_PERCENT,
+                reward_risk_ratio=REWARD_RISK_RATIO,
+            )
+
+        except Exception as error:
+            message = (
+                f"Skipping {signal.symbol}: "
+                "unable to create trade plan: "
+                f"{error}"
+            )
+
+            print(message)
+
+            record_event_safely(
+                journal,
+                symbol=signal.symbol,
+                status="plan_creation_failed",
+                signal_type=signal_type,
+                reason=str(error),
+            )
+
+            continue
 
         plan = risk_manager.apply_position_limit(
             plan
         )
 
         if plan.quantity <= 0:
+            reason = (
+                "Quantity is zero after risk limits"
+            )
+
             print(
                 f"Skipping {plan.symbol}: "
-                "quantity is zero after risk limits."
+                f"{reason.lower()}."
             )
+
+            record_plan_safely(
+                journal,
+                plan=plan,
+                status="risk_filtered",
+                reason=reason,
+            )
+
             continue
 
         eligible_plans.append(plan)
@@ -217,8 +360,9 @@ def main(
             notification_sender,
             (
                 "⚠️ NO ELIGIBLE TRADES\n\n"
-                "Signals were found, but none remained "
-                "after direction and risk filters."
+                "Signals were found, but none "
+                "remained after direction and "
+                "risk filters."
             ),
         )
         return
@@ -244,7 +388,8 @@ def main(
     ):
         score_status = (
             "QUALIFIED"
-            if trade_score.score >= MINIMUM_TRADE_SCORE
+            if trade_score.score
+            >= MINIMUM_TRADE_SCORE
             else "BELOW MINIMUM"
         )
 
@@ -270,14 +415,16 @@ def main(
             notification_sender,
             (
                 "📊 SCAN COMPLETE\n\n"
-                "No trade candidates met the minimum "
-                f"score of {MINIMUM_TRADE_SCORE:.0f}."
+                "No trade candidates met the "
+                "minimum score of "
+                f"{MINIMUM_TRADE_SCORE:.0f}."
             ),
         )
         return
 
     for trade_score in qualified_trades:
         plan = trade_score.plan
+        trade_id = create_trade_id()
 
         record_plan_safely(
             journal,
@@ -288,12 +435,14 @@ def main(
                 "Candidate passed direction, risk, "
                 "and minimum-score filters."
             ),
+            trade_id=trade_id,
         )
 
         print()
         print("=" * 60)
         print(f"EVALUATING {plan.symbol}")
         print("=" * 60)
+        print(f"Trade ID: {trade_id}")
         print(f"Trade Score: {trade_score.score:.2f}")
         print()
         print(format_trade_plan(plan))
@@ -302,6 +451,7 @@ def main(
             allowed, portfolio_reason = (
                 portfolio_manager.can_open_new_trade()
             )
+
         except Exception as error:
             message = (
                 f"Skipping {plan.symbol}: "
@@ -317,6 +467,7 @@ def main(
                 status="portfolio_check_error",
                 score=trade_score.score,
                 reason=str(error),
+                trade_id=trade_id,
             )
 
             send_notification_safely(
@@ -342,6 +493,7 @@ def main(
                 status="portfolio_blocked",
                 score=trade_score.score,
                 reason=portfolio_reason,
+                trade_id=trade_id,
             )
 
             send_notification_safely(
@@ -359,10 +511,12 @@ def main(
                 client=trading_client,
                 plan=plan,
             )
+
         except Exception as error:
             message = (
                 f"Skipping {plan.symbol}: "
-                f"broker preflight failed: {error}"
+                "broker preflight failed: "
+                f"{error}"
             )
 
             print(message)
@@ -373,6 +527,7 @@ def main(
                 status="preflight_error",
                 score=trade_score.score,
                 reason=str(error),
+                trade_id=trade_id,
             )
 
             send_notification_safely(
@@ -386,7 +541,8 @@ def main(
 
         if not preflight.approved:
             print(
-                f"\nPreflight rejected {plan.symbol}:"
+                f"\nPreflight rejected "
+                f"{plan.symbol}:"
             )
 
             for reason in preflight.reasons:
@@ -405,6 +561,7 @@ def main(
                 reason="; ".join(
                     preflight.reasons
                 ),
+                trade_id=trade_id,
             )
 
             send_notification_safely(
@@ -427,6 +584,7 @@ def main(
             reason=(
                 "All broker preflight checks passed."
             ),
+            trade_id=trade_id,
         )
 
         send_notification_safely(
@@ -456,8 +614,10 @@ def main(
                 score=trade_score.score,
                 reason=(
                     "Trade passed preflight, but "
-                    "execution is disabled in configuration."
+                    "execution is disabled in "
+                    "configuration."
                 ),
+                trade_id=trade_id,
             )
 
             send_notification_safely(
@@ -472,7 +632,7 @@ def main(
 
         if not confirm_paper_order(plan):
             print(
-                f"\nPaper order for "
+                "\nPaper order for "
                 f"{plan.symbol} cancelled."
             )
 
@@ -485,6 +645,7 @@ def main(
                     "Paper order was not approved "
                     "in the terminal."
                 ),
+                trade_id=trade_id,
             )
 
             send_notification_safely(
@@ -501,10 +662,11 @@ def main(
             order = order_executor.submit_bracket_order(
                 plan
             )
+
         except Exception as error:
             print(
-                "\nPaper order submission failed for "
-                f"{plan.symbol}: {error}"
+                "\nPaper order submission failed "
+                f"for {plan.symbol}: {error}"
             )
 
             record_plan_safely(
@@ -513,6 +675,7 @@ def main(
                 status="submission_failed",
                 score=trade_score.score,
                 reason=str(error),
+                trade_id=trade_id,
             )
 
             send_notification_safely(
@@ -533,8 +696,8 @@ def main(
 
         if order_id is None:
             print(
-                "\nWarning: Alpaca returned an order "
-                "without an order ID."
+                "\nWarning: Alpaca returned an "
+                "order without an order ID."
             )
 
             record_plan_safely(
@@ -543,17 +706,19 @@ def main(
                 status="missing_order_id",
                 score=trade_score.score,
                 reason=(
-                    "Alpaca returned an order without "
-                    "an order ID."
+                    "Alpaca returned an order "
+                    "without an order ID."
                 ),
+                trade_id=trade_id,
             )
 
             send_notification_safely(
                 notification_sender,
                 (
                     "⚠️ MISSING ORDER ID\n\n"
-                    f"Alpaca accepted the {plan.symbol} "
-                    "request but returned no order ID."
+                    f"Alpaca accepted the "
+                    f"{plan.symbol} request but "
+                    "returned no order ID."
                 ),
             )
             return
@@ -563,6 +728,7 @@ def main(
                 client=trading_client,
                 order_id=order_id,
             )
+
         except Exception as error:
             print(
                 "\nPaper order was submitted, but "
@@ -577,6 +743,7 @@ def main(
                 status="verification_failed",
                 score=trade_score.score,
                 reason=str(error),
+                trade_id=trade_id,
                 order_id=order_id,
             )
 
@@ -585,6 +752,7 @@ def main(
                 (
                     "⚠️ ORDER VERIFICATION FAILED\n\n"
                     f"Symbol: {plan.symbol}\n"
+                    f"Trade ID: {trade_id}\n"
                     f"Order ID: {order_id}\n"
                     f"Error: {error}"
                 ),
@@ -611,6 +779,7 @@ def main(
         print(f"Side:     {plan.signal_type}")
         print(f"Quantity: {plan.quantity}")
         print(f"Score:    {trade_score.score:.2f}")
+        print(f"Trade ID: {trade_id}")
         print(f"Order ID: {order_id}")
         print(f"Status:   {order_status}")
         print("=" * 60)
@@ -621,8 +790,10 @@ def main(
             status="submitted_verified",
             score=trade_score.score,
             reason=(
-                f"Broker order status: {order_status}"
+                "Broker order status: "
+                f"{order_status}"
             ),
+            trade_id=trade_id,
             order_id=order_id,
         )
 
@@ -638,6 +809,7 @@ def main(
                 f"Target: ${plan.target_price:,.2f}\n"
                 f"Score: {trade_score.score:.2f}\n"
                 f"Status: {order_status}\n"
+                f"Trade ID: {trade_id}\n"
                 f"Order ID: {order_id}"
             ),
         )
