@@ -18,6 +18,9 @@ from dashboard.scanner_presentation_models import (
 from dashboard.trade_history_presentation_models import (
     TradeHistorySectionViewModel,
 )
+from dashboard.trade_workflow_presentation_models import (
+    TradeWorkflowViewModel,
+)
 
 
 class MetricContainerProtocol(Protocol):
@@ -31,10 +34,16 @@ class MetricContainerProtocol(Protocol):
 
 
 class StreamlitProtocol(Protocol):
-    def header(self, body: str) -> Any:
+    def header(
+        self,
+        body: str,
+    ) -> Any:
         ...
 
-    def subheader(self, body: str) -> Any:
+    def subheader(
+        self,
+        body: str,
+    ) -> Any:
         ...
 
     def columns(
@@ -70,10 +79,40 @@ class StreamlitProtocol(Protocol):
     ) -> Any:
         ...
 
-    def info(self, body: str) -> Any:
+    def info(
+        self,
+        body: str,
+    ) -> Any:
         ...
 
-    def caption(self, body: str) -> Any:
+    def caption(
+        self,
+        body: str,
+    ) -> Any:
+        ...
+
+    def success(
+        self,
+        body: str,
+    ) -> Any:
+        ...
+
+    def error(
+        self,
+        body: str,
+    ) -> Any:
+        ...
+
+    def warning(
+        self,
+        body: str,
+    ) -> Any:
+        ...
+
+    def write(
+        self,
+        body: str,
+    ) -> Any:
         ...
 
 
@@ -251,6 +290,50 @@ class StreamlitDashboardRenderer:
             use_container_width=True,
             hide_index=True,
         )
+
+    def render_trade_workflow(
+        self,
+        workflow: TradeWorkflowViewModel,
+    ) -> None:
+        """
+        Render the trade approval workflow.
+        """
+
+        self._st.subheader("Trade Approval")
+
+        if workflow.status == "READY FOR APPROVAL":
+            self._st.success(workflow.status)
+        else:
+            self._st.error(workflow.status)
+
+        self._st.write(
+            f"Symbol: {workflow.symbol}"
+        )
+        self._st.write(
+            f"Side: {workflow.side}"
+        )
+        self._st.write(
+            f"Entry: {workflow.entry_price}"
+        )
+        self._st.write(
+            f"Stop: {workflow.stop_price}"
+        )
+        self._st.write(
+            f"Target: {workflow.target_price}"
+        )
+        self._st.write(
+            f"Quantity: {workflow.quantity}"
+        )
+        self._st.write(
+            f"Total Risk: {workflow.total_risk}"
+        )
+        self._st.write(
+            "Risk/Reward: "
+            f"{workflow.risk_reward_ratio}"
+        )
+
+        for reason in workflow.rejection_reasons:
+            self._st.warning(reason)
 
     def _render_primary_metrics(
         self,
