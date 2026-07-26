@@ -26,6 +26,16 @@ class ScannerPresentationMapperProtocol(Protocol):
         ...
 
 
+class TradeWorkflowPresentationMapperProtocol(
+    Protocol
+):
+    def map(
+        self,
+        workflow_result,
+    ):
+        ...
+
+
 class AnalyticsPresentationMapperProtocol(Protocol):
     def map_analytics_section(
         self,
@@ -34,7 +44,9 @@ class AnalyticsPresentationMapperProtocol(Protocol):
         ...
 
 
-class TradeHistoryPresentationMapperProtocol(Protocol):
+class TradeHistoryPresentationMapperProtocol(
+    Protocol
+):
     def map(
         self,
         closed_trades,
@@ -53,6 +65,9 @@ class CompleteDashboardPresentationMapper:
         *,
         account_mapper: AccountPresentationMapperProtocol,
         scanner_mapper: ScannerPresentationMapperProtocol,
+        workflow_mapper: (
+            TradeWorkflowPresentationMapperProtocol
+        ),
         analytics_mapper: AnalyticsPresentationMapperProtocol,
         trade_history_mapper: (
             TradeHistoryPresentationMapperProtocol
@@ -60,8 +75,11 @@ class CompleteDashboardPresentationMapper:
     ) -> None:
         self._account_mapper = account_mapper
         self._scanner_mapper = scanner_mapper
+        self._workflow_mapper = workflow_mapper
         self._analytics_mapper = analytics_mapper
-        self._trade_history_mapper = trade_history_mapper
+        self._trade_history_mapper = (
+            trade_history_mapper
+        )
 
     def map_dashboard(
         self,
@@ -77,6 +95,10 @@ class CompleteDashboardPresentationMapper:
             self._scanner_mapper.map_scanner_section(
                 dashboard_data.scanner_signals
             )
+        )
+
+        workflow = self._workflow_mapper.map(
+            dashboard_data.workflow_result
         )
 
         analytics = (
@@ -96,6 +118,7 @@ class CompleteDashboardPresentationMapper:
         return CompleteDashboardViewModel(
             account=account,
             scanner=scanner,
+            workflow=workflow,
             analytics=analytics,
             trade_history=trade_history,
         )

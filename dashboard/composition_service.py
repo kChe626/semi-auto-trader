@@ -9,6 +9,7 @@ from dashboard.account_service import (
 )
 from dashboard.dashboard_service import DashboardData
 from models.trade_signal import TradeSignal
+from models.workflow_result import WorkflowResult
 
 
 class DashboardAnalyticsServiceProtocol(Protocol):
@@ -49,12 +50,13 @@ class CompleteDashboardData:
     Complete read-only dashboard snapshot.
 
     This combines broker account data, scanner signals,
-    and closed-trade analytics without introducing
-    Streamlit dependencies.
+    workflow output, and closed-trade analytics without
+    introducing Streamlit dependencies.
     """
 
     account_data: AccountDashboardData
     scanner_signals: tuple[TradeSignal, ...]
+    workflow_result: WorkflowResult
     analytics_data: DashboardData
 
 
@@ -107,5 +109,6 @@ class DashboardCompositionService:
         return CompleteDashboardData(
             account_data=account_data,
             scanner_signals=scanner_signals,
+            workflow_result=None,
             analytics_data=analytics_data,
         )

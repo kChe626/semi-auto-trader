@@ -14,11 +14,15 @@ from dashboard.scanner_presentation_models import (
 from dashboard.trade_history_presentation_models import (
     TradeHistorySectionViewModel,
 )
+from dashboard.trade_workflow_presentation_models import (
+    TradeWorkflowViewModel,
+)
 
 
 @dataclass(frozen=True, slots=True)
 class CompleteDashboardViewModel:
     account: AccountSectionViewModel
     scanner: ScannerSectionViewModel
+    workflow: TradeWorkflowViewModel
     analytics: AnalyticsSectionViewModel
     trade_history: TradeHistorySectionViewModel
