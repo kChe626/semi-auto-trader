@@ -7,8 +7,15 @@ from dashboard.streamlit_app import run_dashboard
 
 def _build_view_model() -> Mock:
     view_model = Mock()
+
     view_model.account = Mock(
         name="account-view-model"
+    )
+    view_model.scanner = Mock(
+        name="scanner-view-model"
+    )
+    view_model.workflow = Mock(
+        name="workflow-view-model"
     )
     view_model.analytics = Mock(
         name="analytics-view-model"
@@ -16,6 +23,7 @@ def _build_view_model() -> Mock:
     view_model.trade_history = Mock(
         name="trade-history-view-model"
     )
+
     return view_model
 
 
@@ -36,12 +44,11 @@ def test_app_configures_streamlit_page(
         streamlit_module=streamlit,
     )
 
-    streamlit.set_page_config\
-        .assert_called_once_with(
-            page_title="Semi-Auto Trader",
-            page_icon="📈",
-            layout="wide",
-        )
+    streamlit.set_page_config.assert_called_once_with(
+        page_title="Semi-Auto Trader",
+        page_icon="📈",
+        layout="wide",
+    )
 
     renderer_class.assert_called_once_with(
         streamlit_module=streamlit
@@ -106,6 +113,16 @@ def test_app_loads_and_renders_dashboard(
             view_model.account
         )
 
+    renderer.render_scanner_section\
+        .assert_called_once_with(
+            view_model.scanner
+        )
+
+    renderer.render_trade_workflow\
+        .assert_called_once_with(
+            view_model.workflow
+        )
+
     renderer.render_analytics_section\
         .assert_called_once_with(
             view_model.analytics
@@ -136,7 +153,21 @@ def test_app_renders_sections_in_expected_order(
     call_order: list[str] = []
 
     renderer.render_account_section.side_effect = (
-        lambda account: call_order.append("account")
+        lambda account: call_order.append(
+            "account"
+        )
+    )
+
+    renderer.render_scanner_section.side_effect = (
+        lambda scanner: call_order.append(
+            "scanner"
+        )
+    )
+
+    renderer.render_trade_workflow.side_effect = (
+        lambda workflow: call_order.append(
+            "workflow"
+        )
     )
 
     renderer.render_analytics_section.side_effect = (
@@ -159,6 +190,8 @@ def test_app_renders_sections_in_expected_order(
 
     assert call_order == [
         "account",
+        "scanner",
+        "workflow",
         "analytics",
         "trade_history",
     ]

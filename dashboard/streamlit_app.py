@@ -18,10 +18,16 @@ class StreamlitAppProtocol(Protocol):
     ) -> Any:
         ...
 
-    def title(self, body: str) -> Any:
+    def title(
+        self,
+        body: str,
+    ) -> Any:
         ...
 
-    def error(self, body: str) -> Any:
+    def error(
+        self,
+        body: str,
+    ) -> Any:
         ...
 
 
@@ -37,7 +43,7 @@ def run_dashboard(
     streamlit_module: StreamlitAppProtocol,
 ) -> None:
     """
-    Run the read-only dashboard UI.
+    Run the dashboard UI.
 
     Runtime dependencies are injected so this module
     remains independently testable.
@@ -72,6 +78,10 @@ def run_dashboard(
 
     renderer.render_scanner_section(
         view_model.scanner
+    )
+
+    renderer.render_trade_workflow(
+        view_model.workflow
     )
 
     renderer.render_analytics_section(
