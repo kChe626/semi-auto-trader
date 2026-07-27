@@ -4,6 +4,9 @@ from unittest.mock import MagicMock
 import main
 from models.trade_plan import TradePlan
 
+from pathlib import Path
+from models.trade import TradeStatus
+
 
 def create_test_plan() -> TradePlan:
     return TradePlan(
@@ -215,6 +218,46 @@ def test_cancelled_confirmation_never_submits_order(
 
     executor.submit_bracket_order.assert_not_called()
 
+def test_main_uses_injected_trade_approval(
+    monkeypatch,
+) -> None:
+    _, executor = configure_common_mocks(
+        monkeypatch
+    )
+
+    monkeypatch.setattr(
+        main,
+        "EXECUTION_ENABLED",
+        True,
+    )
+
+    executor.submit_bracket_order.return_value = (
+        SimpleNamespace(
+            id="paper-order-123",
+            status="accepted",
+        )
+    )
+
+    approval = MagicMock(
+        return_value=True,
+    )
+
+    main.main(
+        trade_approval=approval,
+    )
+
+    approval.assert_called_once()
+
+    approved_plan = (
+        approval
+        .call_args
+        .args[0]
+    )
+
+    assert approved_plan.symbol == "META"
+
+    executor.submit_bracket_order.assert_called_once()
+
 
 def test_confirmed_order_is_submitted_once(
     monkeypatch,
@@ -264,3 +307,253 @@ def test_confirmed_order_is_submitted_once(
     )
 
     assert "paper-order-123" in output
+
+def test_verified_order_is_saved_for_restart_recovery(
+    monkeypatch,
+) -> None:
+    _, executor = configure_common_mocks(
+        monkeypatch
+    )
+
+    monkeypatch.setattr(
+        main,
+        "EXECUTION_ENABLED",
+        True,
+    )
+
+    monkeypatch.setattr(
+        main,
+        "confirm_paper_order",
+        lambda plan: True,
+    )
+
+    executor.submit_bracket_order.return_value = (
+        SimpleNamespace(
+            id="paper-order-123",
+            status="accepted",
+        )
+    )
+
+    trade_repository = MagicMock()
+
+    main.main(
+        trade_repository=trade_repository,
+    )
+
+    trade_repository.save.assert_called_once()
+
+    saved_trade = (
+        trade_repository
+        .save
+        .call_args
+        .args[0]
+    )
+
+    assert saved_trade.symbol == "META"
+    assert saved_trade.quantity > 0
+    assert saved_trade.status is TradeStatus.SUBMITTED
+    assert saved_trade.entry_price > 0
+    assert saved_trade.stop_price > 0
+    assert saved_trade.target_price > 0
+    assert (
+        saved_trade.parent_order_id
+        == "paper-order-123"
+    )
+
+
+def test_synchronize_broker_state_wires_order_lifecycle_service(
+    monkeypatch,
+) -> None:
+    trading_client = MagicMock()
+    journal = MagicMock()
+    trade_repository = MagicMock()
+
+    monitor = MagicMock()
+    order_reconciler = MagicMock()
+    position_reconciler = MagicMock()
+    exit_reconciler = MagicMock()
+    order_lifecycle_service = MagicMock()
+    lifecycle_engine = MagicMock()
+    trade_manager = MagicMock()
+
+    monkeypatch.setattr(
+        main,
+        "PositionMonitor",
+        MagicMock(return_value=monitor),
+    )
+
+    monkeypatch.setattr(
+        main,
+        "TradeStateReconciler",
+        MagicMock(
+            return_value=order_reconciler
+        ),
+    )
+
+    monkeypatch.setattr(
+        main,
+        "PositionReconciler",
+        MagicMock(
+            return_value=position_reconciler
+        ),
+    )
+
+    monkeypatch.setattr(
+        main,
+        "ExitReconciler",
+        MagicMock(
+            return_value=exit_reconciler
+        ),
+    )
+
+    lifecycle_service_class = MagicMock(
+        return_value=order_lifecycle_service
+    )
+
+    monkeypatch.setattr(
+        main,
+        "OrderLifecycleService",
+        lifecycle_service_class,
+    )
+
+    lifecycle_engine_class = MagicMock(
+        return_value=lifecycle_engine
+    )
+
+    monkeypatch.setattr(
+        main,
+        "TradeLifecycleEngine",
+        lifecycle_engine_class,
+    )
+
+    trade_manager_class = MagicMock(
+        return_value=trade_manager
+    )
+
+    monkeypatch.setattr(
+        main,
+        "TradeManager",
+        trade_manager_class,
+    )
+
+    result = main.synchronize_broker_state(
+        trading_client=trading_client,
+        journal=journal,
+        trade_repository=trade_repository,
+        notification_sender=None,
+    )
+
+    assert result is True
+
+    lifecycle_service_class.assert_called_once_with(
+        broker=trading_client,
+        repository=trade_repository,
+    )
+
+    lifecycle_engine_class.assert_called_once_with(
+        monitor=monitor,
+        order_reconciler=order_reconciler,
+        position_reconciler=position_reconciler,
+        exit_reconciler=exit_reconciler,
+        order_lifecycle_service=(
+            order_lifecycle_service
+        ),
+    )
+
+    trade_manager_class.assert_called_once_with(
+        lifecycle_engine
+    )
+
+    trade_manager.start_cycle.assert_called_once_with()
+
+def test_main_passes_trade_repository_to_synchronization(
+    monkeypatch,
+) -> None:
+    trading_client = MagicMock()
+    trading_client.get_account.return_value = (
+        SimpleNamespace(
+            equity="100000.00",
+        )
+    )
+
+    trade_repository = MagicMock()
+    synchronize = MagicMock(
+        return_value=False,
+    )
+
+    monkeypatch.setattr(
+        main,
+        "create_trading_client",
+        lambda: trading_client,
+    )
+
+    monkeypatch.setattr(
+        main,
+        "synchronize_broker_state",
+        synchronize,
+    )
+
+    main.main(
+        trade_repository=trade_repository,
+    )
+
+    synchronize.assert_called_once_with(
+        trading_client=trading_client,
+        journal=None,
+        notification_sender=None,
+        trade_repository=trade_repository,
+    )
+def test_run_production_wires_persistent_dependencies(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    database_path = tmp_path / "trades.db"
+
+    journal = MagicMock()
+    trade_repository = MagicMock()
+    run_main = MagicMock()
+
+    journal_class = MagicMock(
+        return_value=journal,
+    )
+    repository_factory = MagicMock(
+        return_value=trade_repository,
+    )
+
+    monkeypatch.setattr(
+        main,
+        "TradeJournal",
+        journal_class,
+    )
+
+    monkeypatch.setattr(
+        main,
+        "create_trade_repository",
+        repository_factory,
+    )
+
+    monkeypatch.setattr(
+        main,
+        "main",
+        run_main,
+    )
+
+    main.run_production(
+        database_path=database_path,
+    )
+
+    journal_class.assert_called_once_with(
+        database_path=database_path,
+    )
+
+    repository_factory.assert_called_once_with(
+        database_path=database_path,
+    )
+
+    run_main.assert_called_once_with(
+        notification_sender=(
+            main.send_telegram_message
+        ),
+        journal=journal,
+        trade_repository=trade_repository,
+    )
