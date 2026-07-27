@@ -15,6 +15,9 @@ def make_factory_dependencies() -> dict[str, Mock]:
         "trading_client": Mock(
             name="trading-client"
         ),
+        "trade_workflow": Mock(
+            name="trade-workflow"
+        ),
         "closed_trade_repository": Mock(
             name="closed-trade-repository"
         ),
@@ -142,11 +145,13 @@ def test_factory_wires_all_analytics_calculators(
 @patch("dashboard.service_factory.scan_market")
 @patch("dashboard.service_factory.DashboardService")
 @patch("dashboard.service_factory.AccountService")
-def test_factory_wires_scanner_loader(
+def test_factory_wires_scanner_and_workflow(
     account_service_class: Mock,
     dashboard_service_class: Mock,
     scan_market: Mock,
 ) -> None:
+    dependencies = make_factory_dependencies()
+
     account_service = Mock(
         name="account-service"
     )
@@ -162,7 +167,7 @@ def test_factory_wires_scanner_loader(
     )
 
     service = create_dashboard_composition_service(
-        **make_factory_dependencies()
+        **dependencies
     )
 
     assert (
@@ -172,6 +177,10 @@ def test_factory_wires_scanner_loader(
     assert (
         service._scanner_loader
         is scan_market
+    )
+    assert (
+        service._trade_workflow
+        is dependencies["trade_workflow"]
     )
     assert (
         service._analytics_service
@@ -187,6 +196,8 @@ def test_factory_preserves_service_instances(
     dashboard_service_class: Mock,
     scan_market: Mock,
 ) -> None:
+    dependencies = make_factory_dependencies()
+
     account_service = Mock(
         name="account-service"
     )
@@ -202,12 +213,16 @@ def test_factory_preserves_service_instances(
     )
 
     service = create_dashboard_composition_service(
-        **make_factory_dependencies()
+        **dependencies
     )
 
     assert (
         service._account_service
         is account_service
+    )
+    assert (
+        service._trade_workflow
+        is dependencies["trade_workflow"]
     )
     assert (
         service._analytics_service
@@ -223,6 +238,8 @@ def test_factory_does_not_load_data_during_creation(
     dashboard_service_class: Mock,
     scan_market: Mock,
 ) -> None:
+    dependencies = make_factory_dependencies()
+
     account_service = Mock(
         name="account-service"
     )
@@ -238,13 +255,17 @@ def test_factory_does_not_load_data_during_creation(
     )
 
     create_dashboard_composition_service(
-        **make_factory_dependencies()
+        **dependencies
     )
 
     account_service.load_account_data\
         .assert_not_called()
 
     scan_market.assert_not_called()
+
+    dependencies["trade_workflow"]\
+        .prepare_trade\
+        .assert_not_called()
 
     analytics_service.load_dashboard_data\
         .assert_not_called()

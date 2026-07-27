@@ -19,6 +19,9 @@ from dashboard.streamlit_app import run_dashboard
 from dashboard.trade_history_presentation_mapper import (
     TradeHistoryPresentationMapper,
 )
+from dashboard.trade_workflow_presentation_mapper import (
+    TradeWorkflowPresentationMapper,
+)
 
 
 @st.cache_resource
@@ -40,6 +43,9 @@ def create_presentation_mapper(
     return CompleteDashboardPresentationMapper(
         account_mapper=AccountPresentationMapper(),
         scanner_mapper=ScannerPresentationMapper(),
+        workflow_mapper=(
+            TradeWorkflowPresentationMapper()
+        ),
         analytics_mapper=AnalyticsPresentationMapper(),
         trade_history_mapper=(
             TradeHistoryPresentationMapper()

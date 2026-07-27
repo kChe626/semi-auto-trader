@@ -29,6 +29,9 @@ def test_create_presentation_mapper_wires_all_mappers(
     scanner_mapper = Mock(
         name="scanner-mapper"
     )
+    workflow_mapper = Mock(
+        name="workflow-mapper"
+    )
     analytics_mapper = Mock(
         name="analytics-mapper"
     )
@@ -48,6 +51,11 @@ def test_create_presentation_mapper_wires_all_mappers(
             app,
             "ScannerPresentationMapper",
             return_value=scanner_mapper,
+        ),
+        patch.object(
+            app,
+            "TradeWorkflowPresentationMapper",
+            return_value=workflow_mapper,
         ),
         patch.object(
             app,
@@ -78,6 +86,7 @@ def test_create_presentation_mapper_wires_all_mappers(
     complete_mapper_class.assert_called_once_with(
         account_mapper=account_mapper,
         scanner_mapper=scanner_mapper,
+        workflow_mapper=workflow_mapper,
         analytics_mapper=analytics_mapper,
         trade_history_mapper=trade_history_mapper,
     )

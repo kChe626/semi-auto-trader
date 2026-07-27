@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import Any, Protocol, Sequence
+from collections.abc import Callable, Sequence
+from typing import Any, Protocol
 
 from dashboard.analytics_chart_models import (
     AnalyticsChartViewModel,
@@ -115,6 +116,14 @@ class StreamlitProtocol(Protocol):
     ) -> Any:
         ...
 
+    def button(
+        self,
+        label: str,
+        *,
+        on_click: Callable[[], None] | None = None,
+    ) -> Any:
+        ...
+
 
 class StreamlitDashboardRenderer:
     """
@@ -181,6 +190,64 @@ class StreamlitDashboardRenderer:
             use_container_width=True,
             hide_index=True,
         )
+
+    def render_trade_workflow(
+        self,
+        workflow: TradeWorkflowViewModel,
+        *,
+        on_approve: Callable[[], None] | None = None,
+        on_reject: Callable[[], None] | None = None,
+    ) -> None:
+        """
+        Render the trade approval workflow.
+        """
+
+        self._st.subheader("Trade Approval")
+
+        if workflow.status == "READY FOR APPROVAL":
+            self._st.success(workflow.status)
+        else:
+            self._st.error(workflow.status)
+
+        self._st.write(
+            f"Symbol: {workflow.symbol}"
+        )
+        self._st.write(
+            f"Side: {workflow.side}"
+        )
+        self._st.write(
+            f"Entry: {workflow.entry_price}"
+        )
+        self._st.write(
+            f"Stop: {workflow.stop_price}"
+        )
+        self._st.write(
+            f"Target: {workflow.target_price}"
+        )
+        self._st.write(
+            f"Quantity: {workflow.quantity}"
+        )
+        self._st.write(
+            f"Total Risk: {workflow.total_risk}"
+        )
+        self._st.write(
+            "Risk/Reward: "
+            f"{workflow.risk_reward_ratio}"
+        )
+
+        if workflow.status == "READY FOR APPROVAL":
+            self._st.button(
+                "Approve Trade",
+                on_click=on_approve,
+            )
+
+            self._st.button(
+                "Reject Trade",
+                on_click=on_reject,
+            )
+
+        for reason in workflow.rejection_reasons:
+            self._st.warning(reason)
 
     def render_analytics_section(
         self,
@@ -290,50 +357,6 @@ class StreamlitDashboardRenderer:
             use_container_width=True,
             hide_index=True,
         )
-
-    def render_trade_workflow(
-        self,
-        workflow: TradeWorkflowViewModel,
-    ) -> None:
-        """
-        Render the trade approval workflow.
-        """
-
-        self._st.subheader("Trade Approval")
-
-        if workflow.status == "READY FOR APPROVAL":
-            self._st.success(workflow.status)
-        else:
-            self._st.error(workflow.status)
-
-        self._st.write(
-            f"Symbol: {workflow.symbol}"
-        )
-        self._st.write(
-            f"Side: {workflow.side}"
-        )
-        self._st.write(
-            f"Entry: {workflow.entry_price}"
-        )
-        self._st.write(
-            f"Stop: {workflow.stop_price}"
-        )
-        self._st.write(
-            f"Target: {workflow.target_price}"
-        )
-        self._st.write(
-            f"Quantity: {workflow.quantity}"
-        )
-        self._st.write(
-            f"Total Risk: {workflow.total_risk}"
-        )
-        self._st.write(
-            "Risk/Reward: "
-            f"{workflow.risk_reward_ratio}"
-        )
-
-        for reason in workflow.rejection_reasons:
-            self._st.warning(reason)
 
     def _render_primary_metrics(
         self,

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from unittest.mock import Mock, patch
+from unittest.mock import ANY, Mock, patch
 
 from dashboard.streamlit_app import run_dashboard
 
@@ -16,6 +16,9 @@ def _build_view_model() -> Mock:
     )
     view_model.workflow = Mock(
         name="workflow-view-model"
+    )
+    view_model.workflow.status = (
+        "READY FOR APPROVAL"
     )
     view_model.analytics = Mock(
         name="analytics-view-model"
@@ -108,30 +111,60 @@ def test_app_loads_and_renders_dashboard(
         streamlit_module=streamlit
     )
 
-    renderer.render_account_section\
-        .assert_called_once_with(
-            view_model.account
-        )
+    renderer.render_account_section.assert_called_once_with(
+        view_model.account
+    )
 
-    renderer.render_scanner_section\
-        .assert_called_once_with(
-            view_model.scanner
-        )
+    renderer.render_scanner_section.assert_called_once_with(
+        view_model.scanner
+    )
 
-    renderer.render_trade_workflow\
-        .assert_called_once_with(
-            view_model.workflow
-        )
+    renderer.render_trade_workflow.assert_called_once_with(
+        view_model.workflow,
+        on_approve=ANY,
+        on_reject=ANY,
+    )
 
-    renderer.render_analytics_section\
-        .assert_called_once_with(
-            view_model.analytics
-        )
+    renderer.render_analytics_section.assert_called_once_with(
+        view_model.analytics
+    )
 
-    renderer.render_trade_history_section\
-        .assert_called_once_with(
-            view_model.trade_history
-        )
+    renderer.render_trade_history_section.assert_called_once_with(
+        view_model.trade_history
+    )
+
+
+@patch(
+    "dashboard.streamlit_app."
+    "StreamlitDashboardRenderer"
+)
+def test_app_passes_workflow_callbacks(
+    renderer_class: Mock,
+) -> None:
+    streamlit = Mock()
+    view_model = _build_view_model()
+
+    load_view_model = Mock(
+        return_value=view_model
+    )
+
+    renderer = renderer_class.return_value
+
+    run_dashboard(
+        load_view_model=load_view_model,
+        streamlit_module=streamlit,
+    )
+
+    _, keyword_arguments = (
+        renderer.render_trade_workflow.call_args
+    )
+
+    assert callable(
+        keyword_arguments["on_approve"]
+    )
+    assert callable(
+        keyword_arguments["on_reject"]
+    )
 
 
 @patch(
@@ -165,8 +198,8 @@ def test_app_renders_sections_in_expected_order(
     )
 
     renderer.render_trade_workflow.side_effect = (
-        lambda workflow: call_order.append(
-            "workflow"
+        lambda workflow, **callbacks: (
+            call_order.append("workflow")
         )
     )
 
@@ -176,12 +209,11 @@ def test_app_renders_sections_in_expected_order(
         )
     )
 
-    renderer.render_trade_history_section\
-        .side_effect = (
-            lambda trade_history: call_order.append(
-                "trade_history"
-            )
+    renderer.render_trade_history_section.side_effect = (
+        lambda trade_history: call_order.append(
+            "trade_history"
         )
+    )
 
     run_dashboard(
         load_view_model=load_view_model,
@@ -251,3 +283,119 @@ def test_app_stops_after_loading_error() -> None:
     streamlit.header.assert_not_called()
     streamlit.subheader.assert_not_called()
     streamlit.dataframe.assert_not_called()
+
+
+@patch(
+    "dashboard.streamlit_app."
+    "StreamlitDashboardRenderer"
+)
+def test_approve_callback_calls_approval_action(
+    renderer_class: Mock,
+) -> None:
+    streamlit = Mock()
+    view_model = _build_view_model()
+
+    load_view_model = Mock(
+        return_value=view_model
+    )
+    approve_trade = Mock()
+    reject_trade = Mock()
+
+    renderer = renderer_class.return_value
+
+    run_dashboard(
+        load_view_model=load_view_model,
+        streamlit_module=streamlit,
+        approve_trade=approve_trade,
+        reject_trade=reject_trade,
+    )
+
+    _, keyword_arguments = (
+        renderer.render_trade_workflow.call_args
+    )
+
+    keyword_arguments["on_approve"]()
+
+    approve_trade.assert_called_once_with(
+        view_model.workflow
+    )
+    reject_trade.assert_not_called()
+
+
+@patch(
+    "dashboard.streamlit_app."
+    "StreamlitDashboardRenderer"
+)
+def test_reject_callback_calls_rejection_action(
+    renderer_class: Mock,
+) -> None:
+    streamlit = Mock()
+    view_model = _build_view_model()
+
+    load_view_model = Mock(
+        return_value=view_model
+    )
+    approve_trade = Mock()
+    reject_trade = Mock()
+
+    renderer = renderer_class.return_value
+
+    run_dashboard(
+        load_view_model=load_view_model,
+        streamlit_module=streamlit,
+        approve_trade=approve_trade,
+        reject_trade=reject_trade,
+    )
+
+    _, keyword_arguments = (
+        renderer.render_trade_workflow.call_args
+    )
+
+    keyword_arguments["on_reject"]()
+
+    reject_trade.assert_called_once_with(
+        view_model.workflow
+    )
+    approve_trade.assert_not_called()
+
+
+@patch(
+    "dashboard.streamlit_app."
+    "StreamlitDashboardRenderer"
+)
+def test_approve_callback_does_not_run_for_rejected_workflow(
+    renderer_class: Mock,
+) -> None:
+    streamlit = Mock()
+    view_model = _build_view_model()
+
+    view_model.workflow.status = "REJECTED"
+
+    load_view_model = Mock(
+        return_value=view_model
+    )
+    approve_trade = Mock()
+    reject_trade = Mock()
+
+    renderer = renderer_class.return_value
+
+    run_dashboard(
+        load_view_model=load_view_model,
+        streamlit_module=streamlit,
+        approve_trade=approve_trade,
+        reject_trade=reject_trade,
+    )
+
+    _, keyword_arguments = (
+        renderer.render_trade_workflow.call_args
+    )
+
+    keyword_arguments["on_approve"]()
+
+    approve_trade.assert_not_called()
+    reject_trade.assert_not_called()
+
+    streamlit.error.assert_called_once_with(
+        "Trade cannot be approved because "
+        "it is not ready for approval."
+    )

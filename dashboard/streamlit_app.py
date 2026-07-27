@@ -9,6 +9,9 @@ from dashboard.complete_presentation_models import (
 from dashboard.streamlit_renderer import (
     StreamlitDashboardRenderer,
 )
+from dashboard.trade_workflow_presentation_models import (
+    TradeWorkflowViewModel,
+)
 
 
 class StreamlitAppProtocol(Protocol):
@@ -36,16 +39,33 @@ DashboardViewModelLoader = Callable[
     CompleteDashboardViewModel,
 ]
 
+TradeWorkflowAction = Callable[
+    [TradeWorkflowViewModel],
+    None,
+]
+
+
+def _do_nothing(
+    workflow: TradeWorkflowViewModel,
+) -> None:
+    """
+    Default safe action used when no workflow
+    action has been injected.
+    """
+    return None
+
 
 def run_dashboard(
     *,
     load_view_model: DashboardViewModelLoader,
     streamlit_module: StreamlitAppProtocol,
+    approve_trade: TradeWorkflowAction = _do_nothing,
+    reject_trade: TradeWorkflowAction = _do_nothing,
 ) -> None:
     """
-    Run the dashboard UI.
+    Run the Streamlit dashboard.
 
-    Runtime dependencies are injected so this module
+    Dependencies are injected so the application
     remains independently testable.
     """
 
@@ -72,6 +92,26 @@ def run_dashboard(
         streamlit_module=streamlit_module
     )
 
+    def on_approve() -> None:
+        if (
+            view_model.workflow.status
+            != "READY FOR APPROVAL"
+        ):
+            streamlit_module.error(
+                "Trade cannot be approved because "
+                "it is not ready for approval."
+            )
+            return
+
+        approve_trade(
+            view_model.workflow
+        )
+
+    def on_reject() -> None:
+        reject_trade(
+            view_model.workflow
+        )
+
     renderer.render_account_section(
         view_model.account
     )
@@ -81,7 +121,9 @@ def run_dashboard(
     )
 
     renderer.render_trade_workflow(
-        view_model.workflow
+        view_model.workflow,
+        on_approve=on_approve,
+        on_reject=on_reject,
     )
 
     renderer.render_analytics_section(

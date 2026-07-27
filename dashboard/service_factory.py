@@ -6,6 +6,7 @@ from dashboard.account_service import (
 )
 from dashboard.composition_service import (
     DashboardCompositionService,
+    TradeWorkflowProtocol,
 )
 from dashboard.dashboard_service import (
     ClosedTradeRepositoryProtocol,
@@ -21,6 +22,7 @@ from scanner.scanner import scan_market
 def create_dashboard_composition_service(
     *,
     trading_client: TradingClientProtocol,
+    trade_workflow: TradeWorkflowProtocol,
     closed_trade_repository: (
         ClosedTradeRepositoryProtocol
     ),
@@ -45,8 +47,9 @@ def create_dashboard_composition_service(
     Create the complete dashboard backend service graph.
 
     Environment loading, SQLite initialization, broker
-    authentication, presentation mapping, and Streamlit
-    rendering remain outside this factory.
+    authentication, workflow configuration, presentation
+    mapping, and Streamlit rendering remain outside this
+    factory.
 
     Keeping those responsibilities outside the factory
     makes it deterministic and safe to import in tests.
@@ -79,5 +82,6 @@ def create_dashboard_composition_service(
     return DashboardCompositionService(
         account_service=account_service,
         scanner_loader=scan_market,
+        trade_workflow=trade_workflow,
         analytics_service=analytics_service,
     )

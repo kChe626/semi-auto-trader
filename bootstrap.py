@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from functools import partial
 from pathlib import Path
 
 from analytics.drawdown import DrawdownCalculator
@@ -16,7 +17,15 @@ from analytics.trade_distribution import (
 from analytics.yearly_performance import (
     YearlyPerformanceCalculator,
 )
+from application.trade_workflow import TradeWorkflow
 from broker.alpaca_client import create_trading_client
+from broker.preflight_service import run_broker_preflight
+from config.trading_config import (
+    MAX_POSITION_PERCENT,
+    REWARD_RISK_RATIO,
+    RISK_PERCENT,
+    STOP_LOSS_PERCENT,
+)
 from dashboard.composition_service import (
     DashboardCompositionService,
 )
@@ -44,6 +53,8 @@ def create_dashboard_service(
     - Alpaca paper-trading account data
     - the SQLite trade journal
     - the closed-trade repository
+    - the trade preparation workflow
+    - broker preflight validation
     - all dashboard analytics calculators
     - the dashboard composition service
     """
@@ -58,8 +69,26 @@ def create_dashboard_service(
         event_source=trade_journal,
     )
 
+    account = trading_client.get_account()
+    account_equity = float(account.equity)
+
+    preflight_runner = partial(
+        run_broker_preflight,
+        trading_client,
+    )
+
+    trade_workflow = TradeWorkflow(
+        account_equity=account_equity,
+        risk_percent=RISK_PERCENT,
+        max_position_percent=MAX_POSITION_PERCENT,
+        stop_loss_percent=STOP_LOSS_PERCENT,
+        reward_risk_ratio=REWARD_RISK_RATIO,
+        preflight_runner=preflight_runner,
+    )
+
     return create_dashboard_composition_service(
         trading_client=trading_client,
+        trade_workflow=trade_workflow,
         closed_trade_repository=(
             closed_trade_repository
         ),

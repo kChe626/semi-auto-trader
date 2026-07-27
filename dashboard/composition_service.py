@@ -14,8 +14,8 @@ from models.workflow_result import WorkflowResult
 
 class DashboardAnalyticsServiceProtocol(Protocol):
     """
-    Minimum analytics-service operation required by the
-    dashboard composition service.
+    Operations required from the dashboard analytics
+    service.
     """
 
     def load_dashboard_data(
@@ -28,13 +28,25 @@ class DashboardAnalyticsServiceProtocol(Protocol):
 
 class DashboardAccountServiceProtocol(Protocol):
     """
-    Minimum account-service operation required by the
-    dashboard composition service.
+    Operations required from the dashboard account
+    service.
     """
 
     def load_account_data(
         self,
     ) -> AccountDashboardData:
+        ...
+
+
+class TradeWorkflowProtocol(Protocol):
+    """
+    Operations required from the trade workflow.
+    """
+
+    def prepare_trade(
+        self,
+        signal: TradeSignal,
+    ) -> WorkflowResult:
         ...
 
 
@@ -49,9 +61,9 @@ class CompleteDashboardData:
     """
     Complete read-only dashboard snapshot.
 
-    This combines broker account data, scanner signals,
-    workflow output, and closed-trade analytics without
-    introducing Streamlit dependencies.
+    Combines account data, scanner signals, the prepared
+    trade workflow result, and trade analytics without
+    introducing presentation-layer dependencies.
     """
 
     account_data: AccountDashboardData
@@ -62,12 +74,12 @@ class CompleteDashboardData:
 
 class DashboardCompositionService:
     """
-    Coordinates the dashboard's account, scanner, and
-    analytics backend services.
+    Coordinate the backend services required to build one
+    complete dashboard snapshot.
 
     This service performs orchestration only. It does not
-    calculate analytics, access SQLite directly, call
-    Streamlit, or submit broker orders.
+    render Streamlit components, calculate analytics,
+    access SQLite directly, or submit broker orders.
     """
 
     def __init__(
@@ -75,12 +87,14 @@ class DashboardCompositionService:
         *,
         account_service: DashboardAccountServiceProtocol,
         scanner_loader: ScannerLoader,
+        trade_workflow: TradeWorkflowProtocol,
         analytics_service: (
             DashboardAnalyticsServiceProtocol
         ),
     ) -> None:
         self._account_service = account_service
         self._scanner_loader = scanner_loader
+        self._trade_workflow = trade_workflow
         self._analytics_service = analytics_service
 
     def load_complete_dashboard_data(
@@ -88,6 +102,9 @@ class DashboardCompositionService:
     ) -> CompleteDashboardData:
         """
         Load one complete dashboard snapshot.
+
+        The first scanner signal is prepared for manual
+        trade approval.
         """
 
         account_data = (
@@ -96,6 +113,12 @@ class DashboardCompositionService:
 
         scanner_signals = tuple(
             self._scanner_loader()
+        )
+
+        workflow_result = (
+            self._trade_workflow.prepare_trade(
+                scanner_signals[0]
+            )
         )
 
         analytics_data = (
@@ -109,6 +132,6 @@ class DashboardCompositionService:
         return CompleteDashboardData(
             account_data=account_data,
             scanner_signals=scanner_signals,
-            workflow_result=None,
+            workflow_result=workflow_result,
             analytics_data=analytics_data,
         )

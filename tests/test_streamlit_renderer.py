@@ -99,3 +99,42 @@ def test_render_trade_workflow_rejected() -> None:
             ),
         ]
     )
+    
+def test_render_trade_workflow_shows_approval_buttons() -> None:
+    streamlit = Mock()
+
+    renderer = StreamlitRenderer(
+        streamlit_module=streamlit,
+    )
+
+    view_model = TradeWorkflowViewModel(
+        symbol="NVDA",
+        side="BUY",
+        entry_price="$100.00",
+        stop_price="$98.00",
+        target_price="$104.00",
+        quantity="100",
+        total_risk="$200.00",
+        risk_reward_ratio="2.00",
+        status="READY FOR APPROVAL",
+        rejection_reasons=(),
+    )
+
+    approve = Mock()
+    reject = Mock()
+
+    renderer.render_trade_workflow(
+        view_model,
+        on_approve=approve,
+        on_reject=reject,
+    )
+
+    streamlit.button.assert_any_call(
+        "Approve Trade",
+        on_click=approve,
+    )
+
+    streamlit.button.assert_any_call(
+        "Reject Trade",
+        on_click=reject,
+    )
