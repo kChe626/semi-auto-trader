@@ -1,16 +1,16 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from enum import StrEnum
 
 
-_ALLOWED_STATUSES = {
-    "SUBMITTED",
-    "PARTIALLY_FILLED",
-    "FILLED",
-    "CLOSED",
-    "CANCELLED",
-    "REJECTED",
-}
+class TradeStatus(StrEnum):
+    SUBMITTED = "SUBMITTED"
+    PARTIALLY_FILLED = "PARTIALLY_FILLED"
+    FILLED = "FILLED"
+    CLOSED = "CLOSED"
+    CANCELLED = "CANCELLED"
+    REJECTED = "REJECTED"
 
 
 @dataclass(frozen=True)
@@ -18,7 +18,7 @@ class Trade:
     trade_id: str
     symbol: str
     quantity: float
-    status: str
+    status: TradeStatus
     entry_price: float
     stop_price: float
     target_price: float
@@ -55,7 +55,15 @@ class Trade:
                 "target_price must be greater than zero"
             )
 
-        if self.status not in _ALLOWED_STATUSES:
+        try:
+            normalized_status = TradeStatus(self.status)
+        except (TypeError, ValueError) as exc:
             raise ValueError(
                 "invalid trade status"
-            )
+            ) from exc
+
+        object.__setattr__(
+            self,
+            "status",
+            normalized_status,
+        )

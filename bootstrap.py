@@ -39,6 +39,20 @@ from database.trade_journal import (
     DATABASE_PATH,
     TradeJournal,
 )
+from execution.sqlite_trade_repository import (
+    SqliteTradeRepository,
+)
+def create_trade_repository(
+    *,
+    database_path: Path | str = DATABASE_PATH,
+) -> SqliteTradeRepository:
+    """
+    Construct the production SQLite trade repository.
+    """
+
+    return SqliteTradeRepository(
+        database_path=database_path,
+    )
 
 
 def create_dashboard_service(

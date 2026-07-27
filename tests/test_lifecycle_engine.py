@@ -84,3 +84,23 @@ def test_engine_handles_no_orders_or_positions() -> None:
 
     order_reconciler.reconcile_order.assert_not_called()
     position_reconciler.reconcile_position.assert_not_called()
+
+def test_engine_synchronizes_persisted_open_trades() -> None:
+    monitor = MagicMock()
+    order_reconciler = MagicMock()
+    position_reconciler = MagicMock()
+    order_lifecycle_service = MagicMock()
+
+    monitor.get_recent_orders.return_value = []
+    monitor.get_open_positions.return_value = []
+
+    engine = TradeLifecycleEngine(
+        monitor,
+        order_reconciler,
+        position_reconciler,
+        order_lifecycle_service=order_lifecycle_service,
+    )
+
+    engine.synchronize()
+
+    order_lifecycle_service.sync_open_trades.assert_called_once_with()

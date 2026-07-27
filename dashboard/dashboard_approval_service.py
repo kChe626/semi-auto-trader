@@ -2,11 +2,13 @@ from __future__ import annotations
 
 from typing import Any, Protocol
 
+from models.workflow_result import WorkflowResult
+
 
 class TradeExecutorProtocol(Protocol):
     def execute(
         self,
-        workflow: Any,
+        workflow: WorkflowResult,
     ) -> Any:
         ...
 
@@ -23,6 +25,17 @@ class DashboardApprovalService:
         self,
         workflow: Any,
     ) -> Any:
+        if isinstance(workflow, WorkflowResult):
+            if not workflow.ready_for_approval:
+                raise ValueError(
+                    "Trade workflow is not ready "
+                    "for approval"
+                )
+
+            return self._trade_executor.execute(
+                workflow
+            )
+
         if (
             workflow.status
             != "READY FOR APPROVAL"

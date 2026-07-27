@@ -69,6 +69,10 @@ from trade_management.trade_identity import (
 )
 from trade_management.trade_manager import TradeManager
 
+from application.trade_approval_factory import (
+    create_trade_approval,
+)
+
 
 def signal_direction_is_allowed(
     signal_type: str,
@@ -168,8 +172,10 @@ def main(
     trade_approval=None,
 ) -> None:
     if trade_approval is None:
-        trade_approval = confirm_paper_order
-
+        trade_approval = create_trade_approval(
+            enabled=True,
+            approval=confirm_paper_order,
+        )
     trading_client = create_trading_client()
 
     try:

@@ -1,6 +1,6 @@
 import pytest
 
-from models.trade import Trade
+from models.trade import Trade, TradeStatus
 
 
 def test_trade_stores_submission_details() -> None:
@@ -178,3 +178,32 @@ def test_trade_rejects_invalid_status() -> None:
             target_price=210.00,
             parent_order_id="order-456",
         )
+
+
+def test_trade_accepts_trade_status_enum() -> None:
+    trade = Trade(
+        trade_id="trade-123",
+        symbol="AAPL",
+        quantity=10,
+        status=TradeStatus.SUBMITTED,
+        entry_price=200.00,
+        stop_price=195.00,
+        target_price=210.00,
+        parent_order_id="order-456",
+    )
+
+    assert trade.status is TradeStatus.SUBMITTED
+
+def test_trade_normalizes_string_status_to_enum() -> None:
+    trade = Trade(
+        trade_id="trade-123",
+        symbol="AAPL",
+        quantity=10,
+        status="SUBMITTED",
+        entry_price=200.00,
+        stop_price=195.00,
+        target_price=210.00,
+        parent_order_id="order-456",
+    )
+
+    assert trade.status is TradeStatus.SUBMITTED

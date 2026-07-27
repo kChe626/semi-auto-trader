@@ -4,6 +4,9 @@ from pathlib import Path
 from unittest.mock import ANY, Mock, patch
 
 import bootstrap
+from execution.sqlite_trade_repository import (
+    SqliteTradeRepository,
+)
 
 
 def test_create_dashboard_service_wires_trade_workflow(
@@ -12,19 +15,19 @@ def test_create_dashboard_service_wires_trade_workflow(
     database_path = tmp_path / "trades.db"
 
     trading_client = Mock(
-        name="trading-client"
+        name="trading-client",
     )
     trade_journal = Mock(
-        name="trade-journal"
+        name="trade-journal",
     )
     closed_trade_repository = Mock(
-        name="closed-trade-repository"
+        name="closed-trade-repository",
     )
     trade_workflow = Mock(
-        name="trade-workflow"
+        name="trade-workflow",
     )
     dashboard_service = Mock(
-        name="dashboard-service"
+        name="dashboard-service",
     )
 
     account = Mock(name="account")
@@ -96,7 +99,9 @@ def test_create_dashboard_service_wires_trade_workflow(
         performance_statistics=(
             bootstrap.PerformanceStatistics
         ),
-        equity_curve=bootstrap.EquityCurveCalculator,
+        equity_curve=(
+            bootstrap.EquityCurveCalculator
+        ),
         drawdown_calculator=(
             bootstrap.DrawdownCalculator
         ),
@@ -109,4 +114,29 @@ def test_create_dashboard_service_wires_trade_workflow(
         trade_distribution_calculator=(
             bootstrap.TradeDistributionCalculator
         ),
+    )
+
+
+def test_create_trade_repository_uses_database_path(
+    tmp_path: Path,
+) -> None:
+    database_path = tmp_path / "trades.db"
+
+    repository = Mock(
+        spec=SqliteTradeRepository,
+    )
+
+    with patch.object(
+        bootstrap,
+        "SqliteTradeRepository",
+        return_value=repository,
+    ) as repository_class:
+        result = bootstrap.create_trade_repository(
+            database_path=database_path,
+        )
+
+    assert result is repository
+
+    repository_class.assert_called_once_with(
+        database_path=database_path,
     )

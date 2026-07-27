@@ -96,3 +96,22 @@ def test_factory_fails_closed_for_incomplete_polling_configuration() -> None:
     assert result is False
     receive_reply.assert_not_called()
     fetch_update.assert_not_called()
+
+from notifications.telegram_bot_api import (
+    TelegramBotApi,
+)
+
+
+def test_factory_can_build_from_telegram_api() -> None:
+    api = TelegramBotApi(
+        bot_token="test-token",
+        chat_id=123456,
+        post=MagicMock(),
+        get=MagicMock(),
+    )
+
+    approval = create_telegram_trade_approval(
+        telegram_api=api,
+    )
+
+    assert callable(approval)

@@ -557,3 +557,24 @@ def test_run_production_wires_persistent_dependencies(
         journal=journal,
         trade_repository=trade_repository,
     )
+
+def test_main_uses_trade_approval_factory(
+    monkeypatch,
+) -> None:
+    approval = MagicMock(
+        return_value=True,
+    )
+
+    factory = MagicMock(
+        return_value=approval,
+    )
+
+    monkeypatch.setattr(
+        main,
+        "create_trade_approval",
+        factory,
+    )
+
+    main.main()
+
+    factory.assert_called_once()

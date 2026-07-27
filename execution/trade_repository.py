@@ -1,22 +1,17 @@
 from __future__ import annotations
 
-from typing import Any
+from models.trade import Trade, TradeStatus
 
 
 class InMemoryTradeRepository:
     def __init__(self) -> None:
-        self._trades: dict[str, Any] = {}
+        self._trades: dict[str, Trade] = {}
 
     def save(
         self,
-        trade: Any,
+        trade: Trade,
     ) -> None:
         trade_id = trade.trade_id
-
-        if not isinstance(trade_id, str) or not trade_id.strip():
-            raise ValueError(
-                "trade_id is required"
-            )
 
         if trade_id in self._trades:
             raise ValueError(
@@ -28,7 +23,7 @@ class InMemoryTradeRepository:
     def get(
         self,
         trade_id: str,
-    ) -> Any:
+    ) -> Trade | None:
         if not isinstance(trade_id, str) or not trade_id.strip():
             raise ValueError(
                 "trade_id is required"
@@ -38,16 +33,16 @@ class InMemoryTradeRepository:
 
     def get_all(
         self,
-    ) -> tuple[Any, ...]:
+    ) -> tuple[Trade, ...]:
         return tuple(self._trades.values())
 
     def get_open(
         self,
-    ) -> tuple[Any, ...]:
+    ) -> tuple[Trade, ...]:
         open_statuses = {
-            "SUBMITTED",
-            "PARTIALLY_FILLED",
-            "FILLED",
+            TradeStatus.SUBMITTED,
+            TradeStatus.PARTIALLY_FILLED,
+            TradeStatus.FILLED,
         }
 
         return tuple(
@@ -58,14 +53,9 @@ class InMemoryTradeRepository:
 
     def update(
         self,
-        trade: Any,
+        trade: Trade,
     ) -> None:
         trade_id = trade.trade_id
-
-        if not isinstance(trade_id, str) or not trade_id.strip():
-            raise ValueError(
-                "trade_id is required"
-            )
 
         if trade_id not in self._trades:
             raise ValueError(

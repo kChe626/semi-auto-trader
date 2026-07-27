@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 from broker.position_monitor import PositionMonitor
+from execution.order_lifecycle_service import (
+    OrderLifecycleService,
+)
 from models.reconciliation import ReconciliationResult
 from trade_management.exit_reconciler import ExitReconciler
 from trade_management.position_reconciler import (
@@ -14,7 +17,7 @@ from trade_management.state_reconciler import (
 class TradeLifecycleEngine:
     """
     Synchronizes broker orders and positions into
-    the local trade journal.
+    the local trade journal and trade repository.
     """
 
     def __init__(
@@ -23,6 +26,7 @@ class TradeLifecycleEngine:
         order_reconciler: TradeStateReconciler,
         position_reconciler: PositionReconciler,
         exit_reconciler: ExitReconciler | None = None,
+        order_lifecycle_service: OrderLifecycleService | None = None,
     ) -> None:
         self._monitor = monitor
         self._order_reconciler = order_reconciler
@@ -30,12 +34,21 @@ class TradeLifecycleEngine:
             position_reconciler
         )
         self._exit_reconciler = exit_reconciler
+        self._order_lifecycle_service = (
+            order_lifecycle_service
+        )
 
     def synchronize(
         self,
         limit: int = 100,
     ) -> list[ReconciliationResult]:
         results: list[ReconciliationResult] = []
+
+        if self._order_lifecycle_service is not None:
+            (
+                self._order_lifecycle_service
+                .sync_open_trades()
+            )
 
         orders = self._monitor.get_recent_orders(
             limit=limit
