@@ -19,11 +19,10 @@ def load_telegram_config() -> None:
         TELEGRAM_BOT_TOKEN
         TELEGRAM_CHAT_ID
 
-    Safe default:
-        Telegram approval disabled.
+    Telegram approval defaults to disabled.
 
     When enabled:
-        Bot token and chat ID are required.
+        bot token and chat ID are required.
     """
 
     global TELEGRAM_APPROVAL_ENABLED
@@ -54,7 +53,9 @@ def load_telegram_config() -> None:
     )
 
     if chat_id_value:
-        TELEGRAM_CHAT_ID = int(chat_id_value)
+        TELEGRAM_CHAT_ID = int(
+            chat_id_value
+        )
     else:
         TELEGRAM_CHAT_ID = None
 
