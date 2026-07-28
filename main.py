@@ -4,11 +4,19 @@ from pathlib import Path
 
 from bootstrap import create_trade_repository
 from broker.alpaca_client import create_trading_client
-from broker.order_confirmation import confirm_paper_order
 from broker.order_executor import OrderExecutor
 from broker.order_verifier import verify_submitted_order
 from broker.position_monitor import PositionMonitor
 from broker.preflight_service import run_broker_preflight
+from config.telegram_config import (
+    TELEGRAM_APPROVAL_ENABLED,
+    TELEGRAM_BOT_TOKEN,
+    TELEGRAM_CHAT_ID,
+)
+
+from notifications.telegram_runtime_factory import (
+    create_runtime_telegram_approval,
+)
 from config.trading_config import (
     ALLOW_LONG_TRADES,
     ALLOW_SHORT_TRADES,
@@ -68,10 +76,15 @@ from trade_management.trade_identity import (
     create_trade_id,
 )
 from trade_management.trade_manager import TradeManager
-
 from application.trade_approval_factory import (
     create_trade_approval,
 )
+
+from broker.order_confirmation import (
+    confirm_paper_order,
+)
+
+
 
 
 def signal_direction_is_allowed(
@@ -171,11 +184,13 @@ def main(
     trade_repository=None,
     trade_approval=None,
 ) -> None:
+
     if trade_approval is None:
         trade_approval = create_trade_approval(
             enabled=True,
             approval=confirm_paper_order,
         )
+
     trading_client = create_trading_client()
 
     try:
@@ -1001,6 +1016,7 @@ def run_production(
     *,
     database_path: Path | str = DATABASE_PATH,
 ) -> None:
+
     journal = TradeJournal(
         database_path=database_path,
     )
@@ -1009,12 +1025,24 @@ def run_production(
         database_path=database_path,
     )
 
-    main(
-        notification_sender=send_telegram_message,
-        journal=journal,
-        trade_repository=trade_repository,
-    )
+    trade_approval = None
 
+    if TELEGRAM_APPROVAL_ENABLED:
+        trade_approval = create_runtime_telegram_approval(
+            bot_token=TELEGRAM_BOT_TOKEN,
+            chat_id=TELEGRAM_CHAT_ID,
+        )
 
-if __name__ == "__main__":
-    run_production()
+    if trade_approval is None:
+        main(
+            notification_sender=send_telegram_message,
+            journal=journal,
+            trade_repository=trade_repository,
+        )
+    else:
+        main(
+            notification_sender=send_telegram_message,
+            journal=journal,
+            trade_repository=trade_repository,
+            trade_approval=trade_approval,
+        )
