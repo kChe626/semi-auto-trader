@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from datetime import datetime, timezone
 from typing import Any
 
 
@@ -9,13 +10,30 @@ class TelegramTradeApproval:
         self,
         *,
         request_response: Callable[[str], str],
+        approval_timeout_seconds: int | None = None,
+        clock: Callable[[], datetime] | None = None,
     ) -> None:
         self._request_response = request_response
+        self._approval_timeout_seconds = (
+            approval_timeout_seconds
+        )
+        self._clock = (
+            clock
+            if clock is not None
+            else lambda: datetime.now(
+                timezone.utc
+            )
+        )
 
     def __call__(
         self,
         plan: Any,
     ) -> bool:
+        if not self._is_within_timeout(
+            plan
+        ):
+            return False
+
         message = self._format_message(
             plan
         )
@@ -30,6 +48,35 @@ class TelegramTradeApproval:
         return self._is_approved_response(
             response=response,
             plan=plan,
+        )
+
+    def _is_within_timeout(
+        self,
+        plan: Any,
+    ) -> bool:
+        if (
+            self._approval_timeout_seconds
+            is None
+        ):
+            return True
+
+        requested_at = getattr(
+            plan,
+            "approval_requested_at",
+            None,
+        )
+
+        if requested_at is None:
+            return True
+
+        elapsed = (
+            self._clock()
+            - requested_at
+        ).total_seconds()
+
+        return (
+            elapsed
+            <= self._approval_timeout_seconds
         )
 
     @staticmethod
@@ -57,14 +104,9 @@ class TelegramTradeApproval:
             None,
         )
 
-        # Backward compatibility:
-        # Allow plain APPROVE for older plans
-        # that do not have a trade ID.
         if trade_id is None:
             return len(parts) == 1
 
-        # Production safety:
-        # Require matching trade ID.
         if len(parts) != 2:
             return False
 
