@@ -2,6 +2,10 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
+from config.telegram_config import (
+    TELEGRAM_APPROVAL_ENABLED,
+)
+
 from notifications.telegram_trade_approval import (
     TelegramTradeApproval,
 )
@@ -9,15 +13,30 @@ from notifications.telegram_trade_approval import (
 
 def create_trade_approval(
     *,
-    enabled: bool,
+    enabled: bool | None = None,
     approval: Callable | None = None,
 ) -> Callable:
-    if not enabled:
+    """
+    Create trade approval handler.
+
+    Backward compatible:
+    - enabled=True + approval -> injected approval
+    - enabled=False -> safe fallback
+
+    Production:
+    - no explicit enabled flag -> Telegram config decides
+    """
+
+    if enabled is not None:
+        if approval is not None:
+            return approval
+
         return lambda plan: True
 
-    if approval is None:
-        raise ValueError(
-            "approval dependency is required when enabled"
-        )
+    if TELEGRAM_APPROVAL_ENABLED:
+        return TelegramTradeApproval()
 
-    return approval
+    if approval is not None:
+        return approval
+
+    return lambda plan: True
