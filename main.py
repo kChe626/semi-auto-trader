@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+
+
 from pathlib import Path
 
 from bootstrap import create_trade_repository
@@ -53,10 +55,8 @@ from notifications.telegram_notifier import (
 )
 from risk.plan_formatter import format_trade_plan
 from risk.portfolio_manager import PortfolioManager
-from risk.risk_manager import RiskManager
-from risk.signal_to_plan import (
-    create_trade_plan_from_signal,
-)
+
+
 from scanner.market_filter import market_is_bullish
 from scanner.scanner import scan_market
 from scanner.trade_ranker import rank_trade_plans
@@ -79,6 +79,8 @@ from trade_management.trade_manager import TradeManager
 from application.trade_approval_factory import (
     create_trade_approval,
 )
+from application.trade_workflow import TradeWorkflow
+
 
 from broker.order_confirmation import (
     confirm_paper_order,
@@ -183,6 +185,7 @@ def main(
     journal: TradeJournal | None = None,
     trade_repository=None,
     trade_approval=None,
+    trade_workflow=None,
 ) -> None:
 
     if trade_approval is None:
@@ -198,6 +201,20 @@ def main(
         account_equity = float(
             account.equity
         )
+        if trade_workflow is None:
+            from functools import partial
+
+            trade_workflow = TradeWorkflow(
+                account_equity=account_equity,
+                risk_percent=RISK_PERCENT,
+                max_position_percent=MAX_POSITION_PERCENT,
+                stop_loss_percent=STOP_LOSS_PERCENT,
+                reward_risk_ratio=REWARD_RISK_RATIO,
+                preflight_runner=partial(
+                    run_broker_preflight,
+                    trading_client,
+                ),
+            )
 
     except Exception as error:
         message = (
@@ -317,12 +334,7 @@ def main(
     )
     print()
 
-    risk_manager = RiskManager(
-        account_equity=account_equity,
-        max_position_percent=(
-            MAX_POSITION_PERCENT
-        ),
-    )
+
 
     portfolio_manager = PortfolioManager(
         trading_client
@@ -414,18 +426,8 @@ def main(
             continue
 
         try:
-            plan = (
-                create_trade_plan_from_signal(
-                    signal=signal,
-                    account_equity=account_equity,
-                    risk_percent=RISK_PERCENT,
-                    stop_loss_percent=(
-                        STOP_LOSS_PERCENT
-                    ),
-                    reward_risk_ratio=(
-                        REWARD_RISK_RATIO
-                    ),
-                )
+            plan = trade_workflow.create_plan(
+                signal
             )
 
         except Exception as error:
@@ -447,11 +449,6 @@ def main(
 
             continue
 
-        plan = (
-            risk_manager.apply_position_limit(
-                plan
-            )
-        )
 
         if plan.quantity <= 0:
             reason = (
