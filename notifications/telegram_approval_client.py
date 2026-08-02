@@ -1,6 +1,22 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from typing import Protocol
+
+
+class TelegramUpdateRepository(
+    Protocol,
+):
+    def get_last_update_id(
+        self,
+    ) -> int | None:
+        ...
+
+    def save_last_update_id(
+        self,
+        update_id: int,
+    ) -> None:
+        ...
 
 
 class TelegramApprovalClient:
@@ -9,10 +25,43 @@ class TelegramApprovalClient:
         *,
         send_message: Callable[[str], None],
         receive_reply: Callable[[], str],
+        update_repository: TelegramUpdateRepository
+        | None = None,
     ) -> None:
         self._send_message = send_message
         self._receive_reply = receive_reply
-        self._last_processed_update_id: int | None = None
+        self._update_repository = (
+            update_repository
+        )
+
+        self._last_processed_update_id: (
+            int | None
+        ) = None
+
+    def _get_last_update_id(
+        self,
+    ) -> int | None:
+        if self._update_repository is not None:
+            return (
+                self._update_repository
+                .get_last_update_id()
+            )
+
+        return self._last_processed_update_id
+
+    def _save_last_update_id(
+        self,
+        update_id: int,
+    ) -> None:
+        if self._update_repository is not None:
+            self._update_repository.save_last_update_id(
+                update_id
+            )
+            return
+
+        self._last_processed_update_id = (
+            update_id
+        )
 
     def receive_authorized_reply(
         self,
@@ -41,6 +90,10 @@ class TelegramApprovalClient:
             )
 
             if has_update_id:
+                last_update_id = (
+                    self._get_last_update_id()
+                )
+
                 if (
                     minimum_update_id is not None
                     and update_id < minimum_update_id
@@ -48,16 +101,12 @@ class TelegramApprovalClient:
                     continue
 
                 if (
-                    self._last_processed_update_id
-                    is not None
-                    and update_id
-                    <= self._last_processed_update_id
+                    last_update_id is not None
+                    and update_id <= last_update_id
                 ):
                     continue
 
             elif minimum_update_id is not None:
-                # Cannot safely compare old-style
-                # updates without an update_id.
                 continue
 
             if (
@@ -82,7 +131,7 @@ class TelegramApprovalClient:
                 continue
 
             if has_update_id:
-                self._last_processed_update_id = (
+                self._save_last_update_id(
                     update_id
                 )
 
@@ -94,7 +143,8 @@ class TelegramApprovalClient:
         self,
         message: str,
         *,
-        fetch_update: Callable[[], dict] | None = None,
+        fetch_update: Callable[[], dict]
+        | None = None,
         authorized_chat_id: int | None = None,
         minimum_update_id: int | None = None,
         max_attempts: int | None = None,
