@@ -67,6 +67,25 @@ class TradeWorkflow:
         self._risk_limiter = risk_limiter
         self._preflight_runner = preflight_runner
 
+    def create_plan(
+        self,
+        signal: TradeSignal,
+    ) -> TradePlan:
+        plan = self._plan_builder(
+            signal=signal,
+            account_equity=self._account_equity,
+            risk_percent=self._risk_percent,
+            stop_loss_percent=self._stop_loss_percent,
+            reward_risk_ratio=self._reward_risk_ratio,
+            atr_multiplier=self._atr_multiplier,
+        )
+
+        return self._risk_limiter(
+            plan,
+            account_equity=self._account_equity,
+            max_position_percent=self._max_position_percent,
+        )
+
     def prepare_trade(
         self,
         signal: TradeSignal,

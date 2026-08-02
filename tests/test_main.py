@@ -57,10 +57,14 @@ def configure_common_mocks(
         lambda: [signal],
     )
 
+    workflow = MagicMock()
+
+    workflow.create_plan.return_value = plan
+
     monkeypatch.setattr(
         main,
-        "create_trade_plan_from_signal",
-        lambda **kwargs: plan,
+        "TradeWorkflow",
+        lambda **kwargs: workflow,
     )
 
     monkeypatch.setattr(
