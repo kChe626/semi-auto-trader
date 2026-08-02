@@ -12,53 +12,7 @@ class TelegramApprovalClient:
     ) -> None:
         self._send_message = send_message
         self._receive_reply = receive_reply
-
-    def request_response(
-        self,
-        message: str,
-    ) -> str:
-        self._send_message(message)
-
-        return self._receive_reply()
-
-    def receive_authorized_reply(
-        self,
-        *,
-        fetch_update: Callable[[], dict],
-        authorized_chat_id: int,
-    ) -> str:
-        while True:
-            update = fetch_update()
-
-            if update.get("chat_id") != authorized_chat_id:
-                continue
-
-            return str(
-                update.get("text", "")
-            )
-    def receive_authorized_reply(
-        self,
-        *,
-        fetch_update: Callable[[], dict],
-        authorized_chat_id: int,
-    ) -> str:
-        while True:
-            update = fetch_update()
-
-            if update.get("chat_id") != authorized_chat_id:
-                continue
-
-            response = str(
-                update.get("text", "")
-            ).strip().upper()
-
-            if response not in {
-                "APPROVE",
-                "REJECT",
-            }:
-                continue
-
-            return response
+        self._last_processed_update_id: int | None = None
 
     def receive_authorized_reply(
         self,
@@ -81,13 +35,29 @@ class TelegramApprovalClient:
                 "update_id"
             )
 
-            if (
-                minimum_update_id is not None
-                and (
-                    update_id is None
-                    or update_id < minimum_update_id
-                )
-            ):
+            has_update_id = isinstance(
+                update_id,
+                int,
+            )
+
+            if has_update_id:
+                if (
+                    minimum_update_id is not None
+                    and update_id < minimum_update_id
+                ):
+                    continue
+
+                if (
+                    self._last_processed_update_id
+                    is not None
+                    and update_id
+                    <= self._last_processed_update_id
+                ):
+                    continue
+
+            elif minimum_update_id is not None:
+                # Cannot safely compare old-style
+                # updates without an update_id.
                 continue
 
             if (
@@ -100,11 +70,21 @@ class TelegramApprovalClient:
                 update.get("text", "")
             ).strip().upper()
 
-            if response not in {
+            if not response:
+                continue
+
+            command = response.split()[0]
+
+            if command not in {
                 "APPROVE",
                 "REJECT",
             }:
                 continue
+
+            if has_update_id:
+                self._last_processed_update_id = (
+                    update_id
+                )
 
             return response
 
@@ -119,31 +99,9 @@ class TelegramApprovalClient:
         minimum_update_id: int | None = None,
         max_attempts: int | None = None,
     ) -> str:
-        self._send_message(message)
-
-        if (
-            fetch_update is not None
-            and authorized_chat_id is not None
-        ):
-            return self.receive_authorized_reply(
-                fetch_update=fetch_update,
-                authorized_chat_id=authorized_chat_id,
-                minimum_update_id=minimum_update_id,
-                max_attempts=max_attempts,
-            )
-
-        return self._receive_reply()
-
-    def request_response(
-        self,
-        message: str,
-        *,
-        fetch_update: Callable[[], dict] | None = None,
-        authorized_chat_id: int | None = None,
-        minimum_update_id: int | None = None,
-        max_attempts: int | None = None,
-    ) -> str:
-        self._send_message(message)
+        self._send_message(
+            message
+        )
 
         polling_requested = (
             fetch_update is not None
