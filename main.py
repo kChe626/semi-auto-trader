@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 
-
 from pathlib import Path
 
 from bootstrap import create_trade_repository
@@ -45,6 +44,7 @@ from models.trade import (
     Trade,
     TradeStatus,
 )
+from models.workflow_result import WorkflowResult
 from notifications.notification_service import (
     NotificationSender,
     format_trade_alert,
@@ -79,6 +79,11 @@ from trade_management.trade_manager import TradeManager
 from application.trade_approval_factory import (
     create_trade_approval,
 )
+
+from application.trade_execution_service import (
+    TradeExecutionService,
+)
+
 from application.trade_workflow import TradeWorkflow
 
 
@@ -342,6 +347,15 @@ def main(
 
     order_executor = OrderExecutor(
         trading_client
+    )
+
+    trade_execution_service = TradeExecutionService(
+        trade_approval=trade_approval,
+        trade_executor=lambda workflow: (
+            order_executor.submit_bracket_order(
+                workflow.plan
+            )
+        ),
     )
 
     try:
@@ -714,6 +728,12 @@ def main(
             "\nPreflight checks passed."
         )
 
+        workflow_result = WorkflowResult(
+            ready_for_approval=True,
+            plan=plan,
+            preflight=preflight,
+        )
+
         record_plan_safely(
             journal,
             plan=plan,
@@ -768,7 +788,11 @@ def main(
             )
             return
 
-        if not trade_approval(plan):
+        order = trade_execution_service.execute(
+            workflow_result
+        )
+
+        if order is None:
             print(
                 "\nPaper order for "
                 f"{plan.symbol} cancelled."
@@ -797,40 +821,7 @@ def main(
             )
             continue
 
-        try:
-            order = (
-                order_executor
-                .submit_bracket_order(plan)
-            )
-
-        except Exception as error:
-            message = (
-                f"Unable to submit paper order "
-                f"for {plan.symbol}: {error}"
-            )
-
-            print(
-                f"\n{message}"
-            )
-
-            record_plan_safely(
-                journal,
-                plan=plan,
-                status="submission_failed",
-                score=trade_score.score,
-                reason=str(error),
-                trade_id=trade_id,
-            )
-
-            send_notification_safely(
-                notification_sender,
-                (
-                    "ORDER SUBMISSION FAILED\n\n"
-                    f"Symbol: {plan.symbol}\n"
-                    f"Error: {error}"
-                ),
-            )
-            continue
+ 
 
         order_id = getattr(
             order,
