@@ -339,9 +339,11 @@ def test_verified_order_is_saved_for_restart_recovery(
     )
 
     trade_repository = MagicMock()
+    journal = MagicMock()
 
     main.main(
         trade_repository=trade_repository,
+        journal=journal,
     )
 
     trade_repository.save.assert_called_once()
