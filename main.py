@@ -40,6 +40,9 @@ from database.trade_journal import (
 from execution.order_lifecycle_service import (
     OrderLifecycleService,
 )
+from execution.trade_executor import (
+    TradeExecutor,
+)
 from models.trade import (
     Trade,
     TradeStatus,
@@ -348,14 +351,27 @@ def main(
     order_executor = OrderExecutor(
         trading_client
     )
+    trade_executor = None
 
-    trade_execution_service = TradeExecutionService(
-        trade_approval=trade_approval,
-        trade_executor=lambda workflow: (
+    if journal is not None and trade_repository is not None:
+        trade_executor = TradeExecutor(
+            broker=order_executor,
+            journal=journal,
+            repository=trade_repository,
+        )
+
+    if trade_executor is not None:
+        execution_function = trade_executor.execute
+    else:
+        execution_function = lambda workflow: (
             order_executor.submit_bracket_order(
                 workflow.plan
             )
-        ),
+        )
+
+    trade_execution_service = TradeExecutionService(
+        trade_approval=trade_approval,
+        trade_executor=execution_function,
         order_verifier=lambda order: (
             verify_submitted_order(
                 client=trading_client,
