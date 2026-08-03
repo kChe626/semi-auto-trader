@@ -152,10 +152,9 @@ def synchronize_broker_state(
         order_lifecycle_service = None
 
         if trade_repository is not None:
-            order_lifecycle_service = (
-                TradeLifecycleEngine(
-                    order_lifecycle_service=...
-                )
+            order_lifecycle_service = OrderLifecycleService(
+                broker=trading_client,
+                repository=trade_repository,
             )
 
         lifecycle_engine = TradeLifecycleEngine(
@@ -950,3 +949,7 @@ def run_production(
             trade_repository=trade_repository,
             trade_approval=trade_approval,
         )
+
+
+if __name__ == "__main__":
+    run_production()
