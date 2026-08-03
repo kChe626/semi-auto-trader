@@ -356,6 +356,12 @@ def main(
                 workflow.plan
             )
         ),
+        order_verifier=lambda order: (
+            verify_submitted_order(
+                client=trading_client,
+                order_id=order.id,
+            )
+        ),
     )
 
     try:
