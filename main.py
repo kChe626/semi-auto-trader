@@ -93,8 +93,21 @@ from application.trade_workflow import TradeWorkflow
 from broker.order_confirmation import (
     confirm_paper_order,
 )
+class AlpacaOrderVerifier:
+    def __init__(
+        self,
+        client,
+    ) -> None:
+        self._client = client
 
-
+    def verify(
+        self,
+        order_id: str,
+    ):
+        return verify_submitted_order(
+            client=self._client,
+            order_id=order_id,
+        )
 
 
 def signal_direction_is_allowed(
@@ -358,6 +371,9 @@ def main(
             broker=order_executor,
             journal=journal,
             repository=trade_repository,
+            order_verifier=AlpacaOrderVerifier(
+                trading_client
+            ),
         )
 
     if trade_executor is not None:
@@ -372,12 +388,6 @@ def main(
     trade_execution_service = TradeExecutionService(
         trade_approval=trade_approval,
         trade_executor=execution_function,
-        order_verifier=lambda order: (
-            verify_submitted_order(
-                client=trading_client,
-                order_id=order.id,
-            )
-        ),
     )
 
     try:
@@ -809,9 +819,13 @@ def main(
                 ),
             )
             return
-
         order = trade_execution_service.execute(
             workflow_result
+        )
+        order_id = getattr(
+            order,
+            "id",
+            "Unavailable",
         )
 
         if order is None:
@@ -843,108 +857,21 @@ def main(
             )
             continue
 
- 
 
-        order_id = getattr(
-            order,
-            "id",
-            None,
-        )
-
-        if order_id is None:
-            print(
-                "\nWarning: Alpaca returned an "
-                "order without an order ID."
-            )
-
-            record_plan_safely(
-                journal,
-                plan=plan,
-                status="missing_order_id",
-                score=trade_score.score,
-                reason=(
-                    "Alpaca returned an order "
-                    "without an order ID."
-                ),
-                trade_id=trade_id,
-            )
-
-            send_notification_safely(
-                notification_sender,
-                (
-                    "MISSING ORDER ID\n\n"
-                    "Alpaca accepted the "
-                    f"{plan.symbol} request but "
-                    "returned no order ID."
-                ),
-            )
-            return
-
-        try:
-            verified_order = (
-                verify_submitted_order(
-                    client=trading_client,
-                    order_id=order_id,
-                )
-            )
-
-        except Exception as error:
-            print(
-                "\nPaper order was submitted, but "
-                "broker verification failed: "
-                f"{error}"
-            )
-            print(
-                f"Submitted Order ID: {order_id}"
-            )
-
-            record_plan_safely(
-                journal,
-                plan=plan,
-                status="verification_failed",
-                score=trade_score.score,
-                reason=str(error),
-                trade_id=trade_id,
-                order_id=order_id,
-            )
-
-            send_notification_safely(
-                notification_sender,
-                (
-                    "ORDER VERIFICATION FAILED\n\n"
-                    f"Symbol: {plan.symbol}\n"
-                    f"Trade ID: {trade_id}\n"
-                    f"Order ID: {order_id}\n"
-                    f"Error: {error}"
-                ),
-            )
-            return
 
         order_status = getattr(
-            verified_order,
+            order,
             "status",
             "Unavailable",
         )
 
         order_symbol = getattr(
-            verified_order,
+            order,
             "symbol",
             plan.symbol,
         )
 
-        if trade_repository is not None:
-            trade_repository.save(
-                Trade(
-                    trade_id=trade_id,
-                    symbol=plan.symbol,
-                    quantity=plan.quantity,
-                    status=TradeStatus.SUBMITTED,
-                    entry_price=plan.entry_price,
-                    stop_price=plan.stop_price,
-                    target_price=plan.target_price,
-                    parent_order_id=str(order_id),
-                )
-            )
+
 
         print()
         print("=" * 60)
