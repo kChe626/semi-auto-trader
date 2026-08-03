@@ -642,9 +642,8 @@ def main(
             continue
 
         try:
-            preflight = run_broker_preflight(
-                client=trading_client,
-                plan=plan,
+            preflight = trade_workflow._preflight_runner(
+                plan
             )
 
         except Exception as error:

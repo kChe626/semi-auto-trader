@@ -114,3 +114,10 @@ class TradeWorkflow:
             plan=limited_plan,
             preflight=preflight,
         )
+    def run_preflight(
+        self,
+        plan: TradePlan,
+    ) -> PreflightResult:
+        return self._preflight_runner(
+            plan
+        )
