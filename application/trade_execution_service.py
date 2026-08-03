@@ -6,10 +6,11 @@ from typing import Any
 
 class TradeExecutionService:
     """
-    Coordinates human approval and trade execution.
+    Coordinates trade approval and execution.
 
     Approval happens before execution.
-    This service does not create plans or manage risk.
+    This service does not create plans,
+    manage risk, or handle persistence.
     """
 
     def __init__(
@@ -27,6 +28,15 @@ class TradeExecutionService:
         self,
         workflow: Any,
     ) -> Any | None:
+        """
+        Execute an approved trade workflow.
+
+        Returns:
+            Verified order result if verification is configured.
+            Submitted order otherwise.
+            None if approval is rejected.
+        """
+
         plan = workflow.plan
 
         approved = self._trade_approval(
@@ -36,13 +46,13 @@ class TradeExecutionService:
         if not approved:
             return None
 
-        order = self._trade_executor(
+        submitted_order = self._trade_executor(
             workflow
         )
 
         if self._order_verifier is None:
-            return order
+            return submitted_order
 
         return self._order_verifier(
-            order
+            submitted_order
         )

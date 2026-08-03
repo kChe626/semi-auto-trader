@@ -40,6 +40,14 @@ class RepositoryProtocol(Protocol):
         ...
 
 
+class OrderVerifierProtocol(Protocol):
+    def verify(
+        self,
+        order_id: str,
+    ) -> Any:
+        ...
+
+
 class TradeExecutor:
     def __init__(
         self,
@@ -47,10 +55,12 @@ class TradeExecutor:
         broker: BrokerProtocol,
         journal: JournalProtocol,
         repository: RepositoryProtocol,
+        order_verifier: OrderVerifierProtocol | None = None,
     ) -> None:
         self._broker = broker
         self._journal = journal
         self._repository = repository
+        self._order_verifier = order_verifier
 
     def execute(
         self,
@@ -84,6 +94,15 @@ class TradeExecutor:
             submitted_order
         )
 
+        verified_order = submitted_order
+
+        if self._order_verifier is not None:
+            verified_order = (
+                self._order_verifier.verify(
+                    parent_order_id
+                )
+            )
+
         trade = TradeMapper.map_submitted_trade(
             plan=workflow.plan,
             parent_order_id=parent_order_id,
@@ -98,7 +117,7 @@ class TradeExecutor:
             event="TRADE_SUBMITTED",
         )
 
-        return submitted_order
+        return verified_order
 
     def _execute_legacy_workflow(
         self,
