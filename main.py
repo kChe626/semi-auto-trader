@@ -47,7 +47,7 @@ from models.trade import (
     Trade,
     TradeStatus,
 )
-from models.workflow_result import WorkflowResult
+
 from notifications.notification_service import (
     NotificationSender,
     format_trade_alert,
@@ -153,9 +153,8 @@ def synchronize_broker_state(
 
         if trade_repository is not None:
             order_lifecycle_service = (
-                OrderLifecycleService(
-                    broker=trading_client,
-                    repository=trade_repository,
+                TradeLifecycleEngine(
+                    order_lifecycle_service=...
                 )
             )
 
@@ -472,9 +471,12 @@ def main(
             continue
 
         try:
-            plan = trade_workflow.create_plan(
+            workflow_result = trade_workflow.prepare_trade(
                 signal
             )
+
+            plan = workflow_result.plan
+            preflight = workflow_result.preflight
 
         except Exception as error:
             message = (
@@ -687,37 +689,7 @@ def main(
             )
             continue
 
-        try:
-            preflight = trade_workflow._preflight_runner(
-                plan
-            )
-
-        except Exception as error:
-            message = (
-                f"Skipping {plan.symbol}: "
-                "broker preflight failed: "
-                f"{error}"
-            )
-
-            print(message)
-
-            record_plan_safely(
-                journal,
-                plan=plan,
-                status="preflight_error",
-                score=trade_score.score,
-                reason=str(error),
-                trade_id=trade_id,
-            )
-
-            send_notification_safely(
-                notification_sender,
-                (
-                    "PREFLIGHT ERROR\n\n"
-                    f"{message}"
-                ),
-            )
-            continue
+ 
 
         if not preflight.approved:
             print(
@@ -760,11 +732,7 @@ def main(
             "\nPreflight checks passed."
         )
 
-        workflow_result = WorkflowResult(
-            ready_for_approval=True,
-            plan=plan,
-            preflight=preflight,
-        )
+
 
         record_plan_safely(
             journal,
