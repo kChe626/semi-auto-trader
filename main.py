@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-
+from dataclasses import replace
 from pathlib import Path
 
 from bootstrap import create_trade_repository
@@ -423,7 +423,7 @@ def main(
         )
         return
 
-    eligible_plans = []
+    eligible_workflows = []
 
     print()
     print("=" * 60)
@@ -516,11 +516,12 @@ def main(
 
             continue
 
-        eligible_plans.append(plan)
-
+        eligible_workflows.append(
+            workflow_result
+        )
     print("=" * 60)
 
-    if not eligible_plans:
+    if not eligible_workflows:
         print(
             "\nNo trade plans remained after "
             "direction and risk filters were applied."
@@ -536,9 +537,16 @@ def main(
             ),
         )
         return
+    workflow_by_plan_id = {
+        id(workflow.plan): workflow
+        for workflow in eligible_workflows
+    }
 
     ranked_trades = rank_trade_plans(
-        eligible_plans
+        [
+            workflow.plan
+            for workflow in eligible_workflows
+        ]
     )
 
     qualified_trades = [
@@ -596,7 +604,17 @@ def main(
 
     for trade_score in qualified_trades:
         plan = trade_score.plan
+
+        workflow_result = workflow_by_plan_id[
+            id(plan)
+        ]
+
         trade_id = create_trade_id()
+
+        workflow_result = replace(
+            workflow_result,
+            trade_id=trade_id,
+        )
 
         record_plan_safely(
             journal,

@@ -25,9 +25,7 @@ class BrokerProtocol(Protocol):
 class JournalProtocol(Protocol):
     def record_event(
         self,
-        *,
-        trade_id: str,
-        event: str,
+        **kwargs: Any,
     ) -> Any:
         ...
 
@@ -49,6 +47,11 @@ class OrderVerifierProtocol(Protocol):
 
 
 class TradeExecutor:
+    """
+    Submit approved trade workflows and persist
+    the resulting broker order state.
+    """
+
     def __init__(
         self,
         *,
@@ -66,7 +69,10 @@ class TradeExecutor:
         self,
         workflow: Any,
     ) -> Any:
-        if isinstance(workflow, WorkflowResult):
+        if isinstance(
+            workflow,
+            WorkflowResult,
+        ):
             return self._execute_workflow_result(
                 workflow
             )
@@ -82,6 +88,15 @@ class TradeExecutor:
         if not workflow.ready_for_approval:
             raise ValueError(
                 "Trade workflow is not ready for execution"
+            )
+
+        trade_id = str(
+            workflow.trade_id or ""
+        ).strip()
+
+        if not trade_id:
+            raise ValueError(
+                "Trade workflow is missing a trade_id"
             )
 
         submitted_order = (
@@ -104,6 +119,7 @@ class TradeExecutor:
             )
 
         trade = TradeMapper.map_submitted_trade(
+            trade_id=trade_id,
             plan=workflow.plan,
             parent_order_id=parent_order_id,
         )
@@ -113,8 +129,23 @@ class TradeExecutor:
         )
 
         self._journal.record_event(
-            trade_id=trade.trade_id,
-            event="TRADE_SUBMITTED",
+            symbol=workflow.plan.symbol,
+            asset_type="stock",
+            signal_type=workflow.plan.signal_type,
+            entry_price=workflow.plan.entry_price,
+            stop_price=workflow.plan.stop_price,
+            target_price=workflow.plan.target_price,
+            quantity=workflow.plan.quantity,
+            total_risk=workflow.plan.total_risk,
+            risk_reward_ratio=(
+                workflow.plan.risk_reward_ratio
+            ),
+            status="trade_submitted",
+            reason=(
+                "Bracket order submitted to broker"
+            ),
+            trade_id=trade_id,
+            order_id=parent_order_id,
         )
 
         return verified_order
@@ -158,7 +189,9 @@ class TradeExecutor:
                 "Submitted order is missing an id"
             )
 
-        parent_order_id = str(order_id).strip()
+        parent_order_id = str(
+            order_id
+        ).strip()
 
         if not parent_order_id:
             raise ValueError(

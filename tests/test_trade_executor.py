@@ -27,11 +27,13 @@ def _make_trade_plan() -> TradePlan:
 def _make_workflow(
     *,
     ready_for_approval: bool = True,
+    trade_id: str | None = "trade-123",
 ) -> WorkflowResult:
     return WorkflowResult(
         ready_for_approval=ready_for_approval,
         plan=_make_trade_plan(),
         preflight=Mock(),
+        trade_id=trade_id,
     )
 
 
@@ -62,21 +64,39 @@ def test_execute_uses_current_workflow_and_persists_submitted_trade() -> None:
     broker.submit_bracket_order.assert_called_once_with(
         workflow.plan
     )
+
     repository.save.assert_called_once()
     journal.record_event.assert_called_once()
 
     saved_trade = repository.save.call_args.args[0]
 
     assert isinstance(saved_trade, Trade)
+    assert saved_trade.trade_id == "trade-123"
     assert saved_trade.symbol == "AAPL"
     assert saved_trade.quantity == 10
-    assert saved_trade.status == TradeStatus.SUBMITTED
+    assert saved_trade.status is TradeStatus.SUBMITTED
     assert saved_trade.entry_price == 200.00
     assert saved_trade.stop_price == 195.00
     assert saved_trade.target_price == 210.00
     assert (
         saved_trade.parent_order_id
         == "parent-order-123"
+    )
+
+    journal.record_event.assert_called_once_with(
+        symbol="AAPL",
+        asset_type="stock",
+        signal_type="BUY",
+        entry_price=200.00,
+        stop_price=195.00,
+        target_price=210.00,
+        quantity=10,
+        total_risk=50.00,
+        risk_reward_ratio=2.00,
+        status="trade_submitted",
+        reason="Bracket order submitted to broker",
+        trade_id="trade-123",
+        order_id="parent-order-123",
     )
 
 
@@ -98,6 +118,32 @@ def test_execute_rejects_workflow_not_ready_for_approval() -> None:
     with pytest.raises(
         ValueError,
         match="Trade workflow is not ready for execution",
+    ):
+        executor.execute(workflow)
+
+    broker.submit_bracket_order.assert_not_called()
+    repository.save.assert_not_called()
+    journal.record_event.assert_not_called()
+
+
+def test_execute_rejects_workflow_without_trade_id() -> None:
+    workflow = _make_workflow(
+        trade_id=None,
+    )
+
+    broker = Mock()
+    repository = Mock()
+    journal = Mock()
+
+    executor = TradeExecutor(
+        broker=broker,
+        repository=repository,
+        journal=journal,
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="Trade workflow is missing a trade_id",
     ):
         executor.execute(workflow)
 
@@ -170,7 +216,9 @@ def test_execute_rejects_submitted_order_with_none_id() -> None:
 def test_execute_uses_trade_mapper_to_build_submitted_trade(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    workflow = _make_workflow()
+    workflow = _make_workflow(
+        trade_id="trade-456",
+    )
 
     submitted_order = Mock()
     submitted_order.id = "parent-order-456"
@@ -181,7 +229,6 @@ def test_execute_uses_trade_mapper_to_build_submitted_trade(
     )
 
     mapped_trade = Mock()
-    mapped_trade.trade_id = "trade-456"
 
     map_submitted_trade = Mock(
         return_value=mapped_trade,
@@ -207,9 +254,11 @@ def test_execute_uses_trade_mapper_to_build_submitted_trade(
     assert result is submitted_order
 
     map_submitted_trade.assert_called_once_with(
+        trade_id="trade-456",
         plan=workflow.plan,
         parent_order_id="parent-order-456",
     )
+
     repository.save.assert_called_once_with(
         mapped_trade
     )

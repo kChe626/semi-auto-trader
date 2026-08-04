@@ -1,7 +1,5 @@
-from uuid import UUID
-
 from execution.trade_mapper import TradeMapper
-from models.trade import Trade, TradeStatus
+from models.trade import TradeStatus
 from models.trade_plan import TradePlan
 
 
@@ -20,21 +18,21 @@ def test_map_submitted_trade_creates_valid_trade() -> None:
     )
 
     trade = TradeMapper.map_submitted_trade(
+        trade_id="trade-123",
         plan=plan,
         parent_order_id=(
             "12345678-1234-5678-1234-567812345678"
         ),
     )
 
-    assert isinstance(trade, Trade)
+    assert trade.trade_id == "trade-123"
     assert trade.symbol == "AAPL"
     assert trade.quantity == 10
     assert trade.status is TradeStatus.SUBMITTED
     assert trade.entry_price == 200.00
     assert trade.stop_price == 195.00
     assert trade.target_price == 210.00
-    assert trade.parent_order_id == (
-        "12345678-1234-5678-1234-567812345678"
+    assert (
+        trade.parent_order_id
+        == "12345678-1234-5678-1234-567812345678"
     )
-
-    UUID(trade.trade_id)

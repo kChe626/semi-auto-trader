@@ -1,10 +1,11 @@
+from dataclasses import replace
 from unittest.mock import MagicMock
 
 from application.trade_workflow import TradeWorkflow
 from execution.trade_executor import TradeExecutor
 from models.preflight_result import PreflightResult
+from models.trade import Trade, TradeStatus
 from models.trade_signal import TradeSignal
-from risk.signal_to_plan import create_trade_plan_from_signal
 
 
 def create_signal() -> TradeSignal:
@@ -12,8 +13,7 @@ def create_signal() -> TradeSignal:
         symbol="NVDA",
         signal_type="BUY",
         price=100.00,
-        reason="Bullish crossover",
-        atr=2.00,
+        reason="Qualified integration-test signal",
         rsi=55.00,
         short_sma=101.00,
         long_sma=99.00,
@@ -25,8 +25,11 @@ def test_approved_trade_flows_to_broker_and_repository() -> None:
     journal = MagicMock()
     repository = MagicMock()
 
+    submitted_order = MagicMock()
+    submitted_order.id = "ORDER-123"
+
     broker.submit_bracket_order.return_value = (
-        MagicMock(id="ORDER-123")
+        submitted_order
     )
 
     executor = TradeExecutor(
@@ -50,17 +53,47 @@ def test_approved_trade_flows_to_broker_and_repository() -> None:
         create_signal()
     )
 
+    result = replace(
+        result,
+        trade_id="trade-123",
+    )
+
     assert result.ready_for_approval is True
 
-    executor.execute(
+    returned_order = executor.execute(
         result
     )
 
-    broker.submit_bracket_order.assert_called_once()
+    assert returned_order is submitted_order
+
+    broker.submit_bracket_order.assert_called_once_with(
+        result.plan
+    )
 
     repository.save.assert_called_once()
 
+    saved_trade = repository.save.call_args.args[0]
+
+    assert isinstance(saved_trade, Trade)
+    assert saved_trade.trade_id == "trade-123"
+    assert saved_trade.symbol == "NVDA"
+    assert saved_trade.status is TradeStatus.SUBMITTED
+    assert saved_trade.parent_order_id == "ORDER-123"
+
     journal.record_event.assert_called_once_with(
-        trade_id=repository.save.call_args.args[0].trade_id,
-        event="TRADE_SUBMITTED",
+        symbol="NVDA",
+        asset_type="stock",
+        signal_type="BUY",
+        entry_price=result.plan.entry_price,
+        stop_price=result.plan.stop_price,
+        target_price=result.plan.target_price,
+        quantity=result.plan.quantity,
+        total_risk=result.plan.total_risk,
+        risk_reward_ratio=(
+            result.plan.risk_reward_ratio
+        ),
+        status="trade_submitted",
+        reason="Bracket order submitted to broker",
+        trade_id="trade-123",
+        order_id="ORDER-123",
     )
