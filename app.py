@@ -24,11 +24,14 @@ from dashboard.trade_workflow_presentation_mapper import (
 )
 
 
-@st.cache_resource
 def create_service():
     """
-    Construct the dashboard service once per Streamlit
-    process instead of rebuilding it on every rerun.
+    Construct a fresh dashboard service for the
+    current dashboard load.
+
+    The service is intentionally not cached so that
+    scanner results, workflow selection, broker state,
+    and trading configuration remain current.
     """
     return create_dashboard_service()
 
@@ -39,6 +42,8 @@ def create_presentation_mapper(
     """
     Construct the presentation-mapping graph once per
     Streamlit process.
+
+    These mappers are stateless and safe to cache.
     """
     return CompleteDashboardPresentationMapper(
         account_mapper=AccountPresentationMapper(),
@@ -46,7 +51,9 @@ def create_presentation_mapper(
         workflow_mapper=(
             TradeWorkflowPresentationMapper()
         ),
-        analytics_mapper=AnalyticsPresentationMapper(),
+        analytics_mapper=(
+            AnalyticsPresentationMapper()
+        ),
         trade_history_mapper=(
             TradeHistoryPresentationMapper()
         ),
@@ -55,10 +62,11 @@ def create_presentation_mapper(
 
 def load_view_model():
     """
-    Load current dashboard data and convert the snapshot
-    into the complete presentation model.
+    Load current dashboard data and convert the
+    snapshot into the complete presentation model.
     """
     service = create_service()
+
     presentation_mapper = (
         create_presentation_mapper()
     )
