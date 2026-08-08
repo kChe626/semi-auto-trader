@@ -4,20 +4,20 @@ from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from typing import Protocol
 
+from config.trading_config import (
+    ALLOW_LONG_TRADES,
+    ALLOW_SHORT_TRADES,
+)
 from dashboard.account_service import (
     AccountDashboardData,
 )
 from dashboard.dashboard_service import DashboardData
 from models.trade_signal import TradeSignal
 from models.workflow_result import WorkflowResult
+from scanner.trade_ranker import rank_trade_plans
 
 
 class DashboardAnalyticsServiceProtocol(Protocol):
-    """
-    Operations required from the dashboard analytics
-    service.
-    """
-
     def load_dashboard_data(
         self,
         *,
@@ -27,11 +27,6 @@ class DashboardAnalyticsServiceProtocol(Protocol):
 
 
 class DashboardAccountServiceProtocol(Protocol):
-    """
-    Operations required from the dashboard account
-    service.
-    """
-
     def load_account_data(
         self,
     ) -> AccountDashboardData:
@@ -39,10 +34,6 @@ class DashboardAccountServiceProtocol(Protocol):
 
 
 class TradeWorkflowProtocol(Protocol):
-    """
-    Operations required from the trade workflow.
-    """
-
     def prepare_trade(
         self,
         signal: TradeSignal,
@@ -58,14 +49,6 @@ ScannerLoader = Callable[
 
 @dataclass(frozen=True)
 class CompleteDashboardData:
-    """
-    Complete read-only dashboard snapshot.
-
-    Combines account data, scanner signals, the prepared
-    trade workflow result, and trade analytics without
-    introducing presentation-layer dependencies.
-    """
-
     account_data: AccountDashboardData
     scanner_signals: tuple[TradeSignal, ...]
     workflow_result: WorkflowResult
@@ -76,10 +59,6 @@ class DashboardCompositionService:
     """
     Coordinate the backend services required to build one
     complete dashboard snapshot.
-
-    This service performs orchestration only. It does not
-    render Streamlit components, calculate analytics,
-    access SQLite directly, or submit broker orders.
     """
 
     def __init__(
@@ -100,13 +79,6 @@ class DashboardCompositionService:
     def load_complete_dashboard_data(
         self,
     ) -> CompleteDashboardData:
-        """
-        Load one complete dashboard snapshot.
-
-        The first scanner signal is prepared for manual
-        trade approval.
-        """
-
         account_data = (
             self._account_service.load_account_data()
         )
@@ -116,8 +88,8 @@ class DashboardCompositionService:
         )
 
         workflow_result = (
-            self._trade_workflow.prepare_trade(
-                scanner_signals[0]
+            self._select_best_workflow(
+                scanner_signals
             )
         )
 
@@ -135,3 +107,75 @@ class DashboardCompositionService:
             workflow_result=workflow_result,
             analytics_data=analytics_data,
         )
+
+    def _select_best_workflow(
+        self,
+        scanner_signals: tuple[TradeSignal, ...],
+    ) -> WorkflowResult:
+        if not scanner_signals:
+            raise ValueError(
+                "No scanner signals are available"
+            )
+
+        eligible_workflows: list[
+            WorkflowResult
+        ] = []
+
+        for signal in scanner_signals:
+            if not self._direction_is_allowed(
+                signal.signal_type
+            ):
+                continue
+
+            try:
+                workflow = (
+                    self._trade_workflow
+                    .prepare_trade(signal)
+                )
+            except Exception:
+                continue
+
+            eligible_workflows.append(
+                workflow
+            )
+
+        if not eligible_workflows:
+            # Temporary fallback so existing presentation
+            # contracts remain valid.
+            return self._trade_workflow.prepare_trade(
+                scanner_signals[0]
+            )
+
+        workflow_by_plan_id = {
+            id(workflow.plan): workflow
+            for workflow in eligible_workflows
+        }
+
+        ranked_trades = rank_trade_plans(
+            [
+                workflow.plan
+                for workflow in eligible_workflows
+            ]
+        )
+
+        best_trade = ranked_trades[0]
+
+        return workflow_by_plan_id[
+            id(best_trade.plan)
+        ]
+
+    @staticmethod
+    def _direction_is_allowed(
+        signal_type: str,
+    ) -> bool:
+        normalized = str(
+            signal_type
+        ).strip().upper()
+
+        if normalized == "BUY":
+            return ALLOW_LONG_TRADES
+
+        if normalized == "SELL":
+            return ALLOW_SHORT_TRADES
+
+        return False
