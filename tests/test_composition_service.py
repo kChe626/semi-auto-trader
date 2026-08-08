@@ -18,6 +18,7 @@ ACCOUNT_EQUITY = 100_000.00
 def make_account_data() -> Mock:
     account_data = Mock(name="account-data")
     account_data.account.equity = ACCOUNT_EQUITY
+
     return account_data
 
 
@@ -164,44 +165,59 @@ def test_load_complete_dashboard_data_returns_snapshot() -> None:
     nvda_workflow = make_workflow_result(
         symbol="NVDA",
     )
+
     aapl_workflow = make_workflow_result(
         symbol="AAPL",
     )
 
-    analytics_data = Mock(name="analytics-data")
+    analytics_data = Mock(
+        name="analytics-data"
+    )
 
     account_service.load_account_data.return_value = (
         account_data
     )
 
-    scanner_loader.return_value = scanner_signals
+    scanner_loader.return_value = (
+        scanner_signals
+    )
+
+    def prepare_trade(
+        signal: TradeSignal,
+    ) -> WorkflowResult:
+        if signal.symbol == "NVDA":
+            return nvda_workflow
+
+        return aapl_workflow
 
     trade_workflow.prepare_trade.side_effect = (
-        lambda signal: (
-            nvda_workflow
-            if signal.symbol == "NVDA"
-            else aapl_workflow
-        )
+        prepare_trade
     )
 
     analytics_service.load_dashboard_data.return_value = (
         analytics_data
     )
 
-    result = service.load_complete_dashboard_data()
+    result = (
+        service.load_complete_dashboard_data()
+    )
 
     assert isinstance(
         result,
         CompleteDashboardData,
     )
+
     assert result.account_data is account_data
+
     assert result.scanner_signals == tuple(
         scanner_signals
     )
+
     assert result.workflow_result in (
         nvda_workflow,
         aapl_workflow,
     )
+
     assert result.analytics_data is analytics_data
 
 
@@ -258,41 +274,71 @@ def test_services_are_loaded_in_expected_order() -> None:
     analytics_service = Mock()
 
     account_data = make_account_data()
+
     signal = make_signal()
-    workflow_result = make_workflow_result()
+
+    workflow_result = (
+        make_workflow_result()
+    )
 
     def load_account_data() -> Mock:
-        calls.append("account")
+        calls.append(
+            "account"
+        )
+
         return account_data
 
-    def load_scanner_signals() -> list[TradeSignal]:
-        calls.append("scanner")
-        return [signal]
+    def load_scanner_signals() -> list[
+        TradeSignal
+    ]:
+        calls.append(
+            "scanner"
+        )
+
+        return [
+            signal,
+        ]
 
     def prepare_trade(
         received_signal: TradeSignal,
     ) -> WorkflowResult:
         assert received_signal is signal
-        calls.append("workflow")
+
+        calls.append(
+            "workflow"
+        )
+
         return workflow_result
 
     def load_dashboard_data(
         *,
         starting_equity: float,
     ) -> Mock:
-        assert starting_equity == ACCOUNT_EQUITY
-        calls.append("analytics")
-        return Mock(name="analytics-data")
+        assert (
+            starting_equity
+            == ACCOUNT_EQUITY
+        )
+
+        calls.append(
+            "analytics"
+        )
+
+        return Mock(
+            name="analytics-data"
+        )
 
     account_service.load_account_data.side_effect = (
         load_account_data
     )
+
     scanner_loader.side_effect = (
         load_scanner_signals
     )
+
     trade_workflow.prepare_trade.side_effect = (
         prepare_trade
     )
+
     analytics_service.load_dashboard_data.side_effect = (
         load_dashboard_data
     )
@@ -323,14 +369,24 @@ def test_scanner_generator_is_materialized_once() -> None:
         _,
     ) = make_service()
 
-    first_signal = make_signal("NVDA")
-    second_signal = make_signal("AAPL")
-
-    first_workflow = make_workflow_result(
-        symbol="NVDA",
+    first_signal = make_signal(
+        "NVDA"
     )
-    second_workflow = make_workflow_result(
-        symbol="AAPL",
+
+    second_signal = make_signal(
+        "AAPL"
+    )
+
+    first_workflow = (
+        make_workflow_result(
+            symbol="NVDA",
+        )
+    )
+
+    second_workflow = (
+        make_workflow_result(
+            symbol="AAPL",
+        )
     )
 
     iterations = 0
@@ -343,19 +399,28 @@ def test_scanner_generator_is_materialized_once() -> None:
         yield first_signal
         yield second_signal
 
-    scanner_loader.return_value = generate_signals()
-
-    trade_workflow.prepare_trade.side_effect = (
-        lambda signal: (
-            first_workflow
-            if signal.symbol == "NVDA"
-            else second_workflow
-        )
+    scanner_loader.return_value = (
+        generate_signals()
     )
 
-    result = service.load_complete_dashboard_data()
+    def prepare_trade(
+        signal: TradeSignal,
+    ) -> WorkflowResult:
+        if signal.symbol == "NVDA":
+            return first_workflow
+
+        return second_workflow
+
+    trade_workflow.prepare_trade.side_effect = (
+        prepare_trade
+    )
+
+    result = (
+        service.load_complete_dashboard_data()
+    )
 
     assert iterations == 1
+
     assert result.scanner_signals == (
         first_signal,
         second_signal,
@@ -384,7 +449,9 @@ def test_account_exception_is_not_hidden() -> None:
         service.load_complete_dashboard_data()
 
     scanner_loader.assert_not_called()
+
     trade_workflow.prepare_trade.assert_not_called()
+
     analytics_service.load_dashboard_data.assert_not_called()
 
 
@@ -397,8 +464,10 @@ def test_scanner_exception_is_not_hidden() -> None:
         analytics_service,
     ) = make_service()
 
-    scanner_loader.side_effect = RuntimeError(
-        "scanner unavailable"
+    scanner_loader.side_effect = (
+        RuntimeError(
+            "scanner unavailable"
+        )
     )
 
     with pytest.raises(
@@ -408,7 +477,9 @@ def test_scanner_exception_is_not_hidden() -> None:
         service.load_complete_dashboard_data()
 
     account_service.load_account_data.assert_called_once_with()
+
     trade_workflow.prepare_trade.assert_not_called()
+
     analytics_service.load_dashboard_data.assert_not_called()
 
 
@@ -434,7 +505,9 @@ def test_analytics_exception_is_not_hidden() -> None:
         service.load_complete_dashboard_data()
 
     account_service.load_account_data.assert_called_once_with()
+
     scanner_loader.assert_called_once_with()
+
     trade_workflow.prepare_trade.assert_called_once()
 
 
@@ -450,11 +523,13 @@ def test_each_load_returns_new_snapshot() -> None:
     first_result = (
         service.load_complete_dashboard_data()
     )
+
     second_result = (
         service.load_complete_dashboard_data()
     )
 
     assert first_result is not second_result
+
     assert first_result == second_result
 
 
@@ -464,24 +539,25 @@ def test_sell_signal_is_skipped_when_short_trades_disabled() -> None:
     trade_workflow = Mock()
     analytics_service = Mock()
 
-    account_data = make_account_data()
-
     sell_signal = make_signal(
         "AMD",
         signal_type="SELL",
     )
+
     buy_signal = make_signal(
         "CRM",
         signal_type="BUY",
     )
 
-    buy_workflow = make_workflow_result(
-        symbol="CRM",
-        signal_type="BUY",
+    buy_workflow = (
+        make_workflow_result(
+            symbol="CRM",
+            signal_type="BUY",
+        )
     )
 
     account_service.load_account_data.return_value = (
-        account_data
+        make_account_data()
     )
 
     scanner_loader.return_value = [
@@ -494,7 +570,9 @@ def test_sell_signal_is_skipped_when_short_trades_disabled() -> None:
     )
 
     analytics_service.load_dashboard_data.return_value = (
-        Mock(name="analytics-data")
+        Mock(
+            name="analytics-data"
+        )
     )
 
     service = DashboardCompositionService(
@@ -504,13 +582,18 @@ def test_sell_signal_is_skipped_when_short_trades_disabled() -> None:
         analytics_service=analytics_service,
     )
 
-    result = service.load_complete_dashboard_data()
+    result = (
+        service.load_complete_dashboard_data()
+    )
 
     trade_workflow.prepare_trade.assert_called_once_with(
         buy_signal
     )
 
-    assert result.workflow_result is buy_workflow
+    assert (
+        result.workflow_result
+        is buy_workflow
+    )
 
 
 def test_highest_ranked_eligible_workflow_is_selected() -> None:
@@ -527,23 +610,28 @@ def test_highest_ranked_eligible_workflow_is_selected() -> None:
         "AAPL",
         signal_type="BUY",
     )
+
     stronger_signal = make_signal(
         "CRM",
         signal_type="BUY",
     )
 
-    weaker_workflow = make_workflow_result(
-        symbol="AAPL",
-        rsi=69.00,
-        short_sma=100.10,
-        long_sma=100.00,
+    weaker_workflow = (
+        make_workflow_result(
+            symbol="AAPL",
+            rsi=69.00,
+            short_sma=100.10,
+            long_sma=100.00,
+        )
     )
 
-    stronger_workflow = make_workflow_result(
-        symbol="CRM",
-        rsi=55.00,
-        short_sma=103.00,
-        long_sma=100.00,
+    stronger_workflow = (
+        make_workflow_result(
+            symbol="CRM",
+            rsi=55.00,
+            short_sma=103.00,
+            long_sma=100.00,
+        )
     )
 
     scanner_loader.return_value = [
@@ -564,7 +652,9 @@ def test_highest_ranked_eligible_workflow_is_selected() -> None:
     )
 
     analytics_service.load_dashboard_data.return_value = (
-        Mock(name="analytics-data")
+        Mock(
+            name="analytics-data"
+        )
     )
 
     service = DashboardCompositionService(
@@ -574,6 +664,60 @@ def test_highest_ranked_eligible_workflow_is_selected() -> None:
         analytics_service=analytics_service,
     )
 
-    result = service.load_complete_dashboard_data()
+    result = (
+        service.load_complete_dashboard_data()
+    )
 
-    assert result.workflow_result is stronger_workflow
+    assert (
+        result.workflow_result
+        is stronger_workflow
+    )
+
+
+def test_no_signals_returns_no_workflow() -> None:
+    (
+        service,
+        _,
+        scanner_loader,
+        trade_workflow,
+        _,
+    ) = make_service()
+
+    scanner_loader.return_value = []
+
+    result = (
+        service.load_complete_dashboard_data()
+    )
+
+    assert result.workflow_result is None
+
+    trade_workflow.prepare_trade.assert_not_called()
+
+
+def test_only_disabled_sell_signals_returns_no_workflow() -> None:
+    (
+        service,
+        _,
+        scanner_loader,
+        trade_workflow,
+        _,
+    ) = make_service()
+
+    scanner_loader.return_value = [
+        make_signal(
+            "AMD",
+            signal_type="SELL",
+        ),
+        make_signal(
+            "AMAT",
+            signal_type="SELL",
+        ),
+    ]
+
+    result = (
+        service.load_complete_dashboard_data()
+    )
+
+    assert result.workflow_result is None
+
+    trade_workflow.prepare_trade.assert_not_called()

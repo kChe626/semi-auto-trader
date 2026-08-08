@@ -18,6 +18,11 @@ from scanner.trade_ranker import rank_trade_plans
 
 
 class DashboardAnalyticsServiceProtocol(Protocol):
+    """
+    Operations required from the dashboard analytics
+    service.
+    """
+
     def load_dashboard_data(
         self,
         *,
@@ -27,6 +32,11 @@ class DashboardAnalyticsServiceProtocol(Protocol):
 
 
 class DashboardAccountServiceProtocol(Protocol):
+    """
+    Operations required from the dashboard account
+    service.
+    """
+
     def load_account_data(
         self,
     ) -> AccountDashboardData:
@@ -34,6 +44,10 @@ class DashboardAccountServiceProtocol(Protocol):
 
 
 class TradeWorkflowProtocol(Protocol):
+    """
+    Operations required from the trade workflow.
+    """
+
     def prepare_trade(
         self,
         signal: TradeSignal,
@@ -49,16 +63,20 @@ ScannerLoader = Callable[
 
 @dataclass(frozen=True)
 class CompleteDashboardData:
+    """
+    Complete read-only dashboard snapshot.
+    """
+
     account_data: AccountDashboardData
     scanner_signals: tuple[TradeSignal, ...]
-    workflow_result: WorkflowResult
+    workflow_result: WorkflowResult | None
     analytics_data: DashboardData
 
 
 class DashboardCompositionService:
     """
-    Coordinate the backend services required to build one
-    complete dashboard snapshot.
+    Coordinate the backend services required to build
+    one complete dashboard snapshot.
     """
 
     def __init__(
@@ -111,11 +129,9 @@ class DashboardCompositionService:
     def _select_best_workflow(
         self,
         scanner_signals: tuple[TradeSignal, ...],
-    ) -> WorkflowResult:
+    ) -> WorkflowResult | None:
         if not scanner_signals:
-            raise ValueError(
-                "No scanner signals are available"
-            )
+            return None
 
         eligible_workflows: list[
             WorkflowResult
@@ -130,7 +146,9 @@ class DashboardCompositionService:
             try:
                 workflow = (
                     self._trade_workflow
-                    .prepare_trade(signal)
+                    .prepare_trade(
+                        signal
+                    )
                 )
             except Exception:
                 continue
@@ -140,11 +158,7 @@ class DashboardCompositionService:
             )
 
         if not eligible_workflows:
-            # Temporary fallback so existing presentation
-            # contracts remain valid.
-            return self._trade_workflow.prepare_trade(
-                scanner_signals[0]
-            )
+            return None
 
         workflow_by_plan_id = {
             id(workflow.plan): workflow

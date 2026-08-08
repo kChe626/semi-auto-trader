@@ -69,3 +69,16 @@ def test_maps_rejected_workflow() -> None:
         "Market is closed.",
         "An open order already exists for NVDA.",
     )
+
+def test_none_maps_to_no_eligible_trade() -> None:
+    mapper = TradeWorkflowPresentationMapper()
+
+    result = mapper.map(None)
+
+    assert result.symbol == "—"
+    assert result.side == "—"
+    assert result.status == "NO ELIGIBLE TRADE"
+    assert result.rejection_reasons == (
+        "No eligible trade candidate "
+        "is currently available.",
+    )
