@@ -16,6 +16,8 @@ def test_render_trade_workflow_ready_for_approval() -> None:
     view_model = TradeWorkflowViewModel(
         symbol="NVDA",
         side="BUY",
+        score="72.50",
+        minimum_score="70.00",
         entry_price="$100.00",
         stop_price="$98.00",
         target_price="$104.00",
@@ -26,18 +28,24 @@ def test_render_trade_workflow_ready_for_approval() -> None:
         rejection_reasons=(),
     )
 
-    renderer.render_trade_workflow(view_model)
+    renderer.render_trade_workflow(
+        view_model
+    )
 
     streamlit.subheader.assert_called_once_with(
         "Trade Approval"
     )
+
     streamlit.success.assert_called_once_with(
         "READY FOR APPROVAL"
     )
+
     streamlit.write.assert_has_calls(
         [
             call("Symbol: NVDA"),
             call("Side: BUY"),
+            call("Score: 72.50"),
+            call("Minimum Score: 70.00"),
             call("Entry: $100.00"),
             call("Stop: $98.00"),
             call("Target: $104.00"),
@@ -58,6 +66,8 @@ def test_render_trade_workflow_rejected() -> None:
     view_model = TradeWorkflowViewModel(
         symbol="NVDA",
         side="BUY",
+        score="72.50",
+        minimum_score="70.00",
         entry_price="$100.00",
         stop_price="$98.00",
         target_price="$104.00",
@@ -71,18 +81,24 @@ def test_render_trade_workflow_rejected() -> None:
         ),
     )
 
-    renderer.render_trade_workflow(view_model)
+    renderer.render_trade_workflow(
+        view_model
+    )
 
     streamlit.subheader.assert_called_once_with(
         "Trade Approval"
     )
+
     streamlit.error.assert_called_once_with(
         "REJECTED"
     )
+
     streamlit.write.assert_has_calls(
         [
             call("Symbol: NVDA"),
             call("Side: BUY"),
+            call("Score: 72.50"),
+            call("Minimum Score: 70.00"),
             call("Entry: $100.00"),
             call("Stop: $98.00"),
             call("Target: $104.00"),
@@ -91,6 +107,7 @@ def test_render_trade_workflow_rejected() -> None:
             call("Risk/Reward: 2.00"),
         ]
     )
+
     streamlit.warning.assert_has_calls(
         [
             call("Market is closed."),
@@ -99,7 +116,8 @@ def test_render_trade_workflow_rejected() -> None:
             ),
         ]
     )
-    
+
+
 def test_render_trade_workflow_shows_approval_buttons() -> None:
     streamlit = Mock()
 
@@ -110,6 +128,8 @@ def test_render_trade_workflow_shows_approval_buttons() -> None:
     view_model = TradeWorkflowViewModel(
         symbol="NVDA",
         side="BUY",
+        score="72.50",
+        minimum_score="70.00",
         entry_price="$100.00",
         stop_price="$98.00",
         target_price="$104.00",

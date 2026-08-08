@@ -7,6 +7,8 @@ def test_trade_workflow_view_model_stores_display_fields() -> None:
     view_model = TradeWorkflowViewModel(
         symbol="NVDA",
         side="BUY",
+        score="72.50",
+        minimum_score="70.00",
         entry_price="$100.00",
         stop_price="$98.00",
         target_price="$104.00",
@@ -19,6 +21,8 @@ def test_trade_workflow_view_model_stores_display_fields() -> None:
 
     assert view_model.symbol == "NVDA"
     assert view_model.side == "BUY"
+    assert view_model.score == "72.50"
+    assert view_model.minimum_score == "70.00"
     assert view_model.entry_price == "$100.00"
     assert view_model.stop_price == "$98.00"
     assert view_model.target_price == "$104.00"

@@ -5,6 +5,8 @@ from dataclasses import dataclass
 class TradeWorkflowViewModel:
     symbol: str
     side: str
+    score: str
+    minimum_score: str
     entry_price: str
     stop_price: str
     target_price: str

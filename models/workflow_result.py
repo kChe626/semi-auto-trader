@@ -12,3 +12,4 @@ class WorkflowResult:
     plan: TradePlan
     preflight: PreflightResult
     trade_id: str | None = None
+    score: float | None = None

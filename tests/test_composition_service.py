@@ -213,10 +213,14 @@ def test_load_complete_dashboard_data_returns_snapshot() -> None:
         scanner_signals
     )
 
-    assert result.workflow_result in (
-        nvda_workflow,
-        aapl_workflow,
+    assert result.workflow_result is not None
+
+    assert result.workflow_result.plan in (
+        nvda_workflow.plan,
+        aapl_workflow.plan,
     )
+
+    assert result.workflow_result.score == 74.0
 
     assert result.analytics_data is analytics_data
 
@@ -529,7 +533,6 @@ def test_each_load_returns_new_snapshot() -> None:
     )
 
     assert first_result is not second_result
-
     assert first_result == second_result
 
 
@@ -590,10 +593,12 @@ def test_sell_signal_is_skipped_when_short_trades_disabled() -> None:
         buy_signal
     )
 
+    assert result.workflow_result is not None
     assert (
-        result.workflow_result
-        is buy_workflow
+        result.workflow_result.plan
+        is buy_workflow.plan
     )
+    assert result.workflow_result.score == 74.0
 
 
 def test_highest_ranked_eligible_workflow_is_selected() -> None:
@@ -668,10 +673,12 @@ def test_highest_ranked_eligible_workflow_is_selected() -> None:
         service.load_complete_dashboard_data()
     )
 
+    assert result.workflow_result is not None
     assert (
-        result.workflow_result
-        is stronger_workflow
+        result.workflow_result.plan
+        is stronger_workflow.plan
     )
+    assert result.workflow_result.score == 74.0
 
 
 def test_no_signals_returns_no_workflow() -> None:
@@ -722,6 +729,7 @@ def test_only_disabled_sell_signals_returns_no_workflow() -> None:
 
     trade_workflow.prepare_trade.assert_not_called()
 
+
 def test_below_minimum_score_returns_no_workflow() -> None:
     (
         service,
@@ -736,11 +744,13 @@ def test_below_minimum_score_returns_no_workflow() -> None:
         signal_type="BUY",
     )
 
-    low_score_workflow = make_workflow_result(
-        symbol="CRM",
-        rsi=69.00,
-        short_sma=100.10,
-        long_sma=100.00,
+    low_score_workflow = (
+        make_workflow_result(
+            symbol="CRM",
+            rsi=69.00,
+            short_sma=100.10,
+            long_sma=100.00,
+        )
     )
 
     scanner_loader.return_value = [

@@ -216,6 +216,13 @@ class StreamlitDashboardRenderer:
             f"Side: {workflow.side}"
         )
         self._st.write(
+            f"Score: {workflow.score}"
+        )
+        self._st.write(
+            "Minimum Score: "
+            f"{workflow.minimum_score}"
+        )
+        self._st.write(
             f"Entry: {workflow.entry_price}"
         )
         self._st.write(

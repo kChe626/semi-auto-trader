@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from config.trading_config import (
+    MINIMUM_TRADE_SCORE,
+)
 from dashboard.trade_workflow_presentation_models import (
     TradeWorkflowViewModel,
 )
@@ -20,6 +23,10 @@ class TradeWorkflowPresentationMapper:
             return TradeWorkflowViewModel(
                 symbol="—",
                 side="—",
+                score="—",
+                minimum_score=(
+                    f"{MINIMUM_TRADE_SCORE:.2f}"
+                ),
                 entry_price="—",
                 stop_price="—",
                 target_price="—",
@@ -41,9 +48,19 @@ class TradeWorkflowPresentationMapper:
             else "REJECTED"
         )
 
+        score = (
+            f"{result.score:.2f}"
+            if result.score is not None
+            else "—"
+        )
+
         return TradeWorkflowViewModel(
             symbol=plan.symbol,
             side=plan.signal_type,
+            score=score,
+            minimum_score=(
+                f"{MINIMUM_TRADE_SCORE:.2f}"
+            ),
             entry_price=(
                 f"${plan.entry_price:,.2f}"
             ),

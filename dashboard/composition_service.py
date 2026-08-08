@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Protocol
 
 from config.trading_config import (
@@ -188,9 +188,14 @@ class DashboardCompositionService:
 
         best_trade = qualified_trades[0]
 
-        return workflow_by_plan_id[
+        selected_workflow = workflow_by_plan_id[
             id(best_trade.plan)
         ]
+
+        return replace(
+            selected_workflow,
+            score=best_trade.score,
+        )
 
     @staticmethod
     def _direction_is_allowed(
