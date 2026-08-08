@@ -721,3 +721,38 @@ def test_only_disabled_sell_signals_returns_no_workflow() -> None:
     assert result.workflow_result is None
 
     trade_workflow.prepare_trade.assert_not_called()
+
+def test_below_minimum_score_returns_no_workflow() -> None:
+    (
+        service,
+        _,
+        scanner_loader,
+        trade_workflow,
+        _,
+    ) = make_service()
+
+    signal = make_signal(
+        "CRM",
+        signal_type="BUY",
+    )
+
+    low_score_workflow = make_workflow_result(
+        symbol="CRM",
+        rsi=69.00,
+        short_sma=100.10,
+        long_sma=100.00,
+    )
+
+    scanner_loader.return_value = [
+        signal,
+    ]
+
+    trade_workflow.prepare_trade.return_value = (
+        low_score_workflow
+    )
+
+    result = (
+        service.load_complete_dashboard_data()
+    )
+
+    assert result.workflow_result is None

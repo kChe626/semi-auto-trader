@@ -7,14 +7,19 @@ from typing import Protocol
 from config.trading_config import (
     ALLOW_LONG_TRADES,
     ALLOW_SHORT_TRADES,
+    MINIMUM_TRADE_SCORE,
 )
 from dashboard.account_service import (
     AccountDashboardData,
 )
-from dashboard.dashboard_service import DashboardData
+from dashboard.dashboard_service import (
+    DashboardData,
+)
 from models.trade_signal import TradeSignal
 from models.workflow_result import WorkflowResult
-from scanner.trade_ranker import rank_trade_plans
+from scanner.trade_ranker import (
+    rank_trade_plans,
+)
 
 
 class DashboardAnalyticsServiceProtocol(Protocol):
@@ -172,7 +177,16 @@ class DashboardCompositionService:
             ]
         )
 
-        best_trade = ranked_trades[0]
+        qualified_trades = [
+            trade
+            for trade in ranked_trades
+            if trade.score >= MINIMUM_TRADE_SCORE
+        ]
+
+        if not qualified_trades:
+            return None
+
+        best_trade = qualified_trades[0]
 
         return workflow_by_plan_id[
             id(best_trade.plan)

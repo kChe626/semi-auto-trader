@@ -2,9 +2,9 @@
 Central configuration for the semi-automated trading system.
 
 Percentage values use decimal notation:
-    0.002 = 0.20%
-    0.02  = 2.00%
-    0.10  = 10.00%
+0.002 = 0.20%
+0.02  = 2.00%
+0.10  = 10.00%
 """
 
 
