@@ -20,16 +20,17 @@ def scan_market() -> list[TradeSignal]:
             continue
 
         try:
-            bars = add_sma(bars, period=20)
-            bars = add_sma(bars, period=50)
+            bars = add_sma(bars, period=10)
+            bars = add_sma(bars, period=30)
             bars = add_rsi(bars, period=14)
 
             signal = check_sma_crossover(
                 symbol=symbol,
                 data=bars,
-                short_period=20,
-                long_period=50,
+                short_period=10,
+                long_period=30,
                 rsi_period=14,
+                rsi_buy_max=75.0,
             )
 
         except (ValueError, KeyError) as error:
