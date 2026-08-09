@@ -1,3 +1,5 @@
+from dataclasses import replace
+from datetime import datetime, timedelta, timezone
 from unittest.mock import Mock, patch
 
 import pytest
@@ -30,6 +32,7 @@ def make_workflow(
     ready_for_approval: bool = True,
     preflight_approved: bool = True,
     trade_id: str | None = None,
+    created_at: datetime | None = None,
 ) -> WorkflowResult:
     return WorkflowResult(
         ready_for_approval=ready_for_approval,
@@ -43,6 +46,11 @@ def make_workflow(
             ),
         ),
         trade_id=trade_id,
+        created_at=(
+            created_at
+            if created_at is not None
+            else datetime.now(timezone.utc)
+        ),
     )
 
 
@@ -77,9 +85,11 @@ def make_service(
             name="preflight-runner"
         )
 
-        preflight_runner.return_value = PreflightResult(
-            approved=True,
-            reasons=[],
+        preflight_runner.return_value = (
+            PreflightResult(
+                approved=True,
+                reasons=[],
+            )
         )
 
     service = DashboardApprovalService(
@@ -162,7 +172,10 @@ def test_approve_executes_ready_workflow_with_generated_trade_id(
         is workflow.plan
     )
 
-    assert executable_workflow.preflight.approved is True
+    assert (
+        executable_workflow.preflight.approved
+        is True
+    )
 
 
 def test_approve_preserves_existing_trade_id() -> None:
@@ -401,11 +414,13 @@ def test_approve_blocks_when_fresh_preflight_rejects() -> None:
         name="preflight-runner"
     )
 
-    preflight_runner.return_value = PreflightResult(
-        approved=False,
-        reasons=[
-            "Market is closed.",
-        ],
+    preflight_runner.return_value = (
+        PreflightResult(
+            approved=False,
+            reasons=[
+                "Market is closed.",
+            ],
+        )
     )
 
     (
@@ -498,3 +513,159 @@ def test_approve_uses_fresh_preflight_result_for_execution(
         executable_workflow.trade_id
         == "trade-789"
     )
+
+
+def test_approve_allows_fresh_candidate() -> None:
+    (
+        service,
+        trade_executor,
+        portfolio_manager,
+        preflight_runner,
+    ) = make_service()
+
+    workflow = make_workflow(
+        created_at=datetime.now(
+            timezone.utc
+        ),
+    )
+
+    with patch(
+        "dashboard.dashboard_approval_service."
+        "EXECUTION_ENABLED",
+        True,
+    ):
+        service.approve(
+            workflow
+        )
+
+    portfolio_manager\
+        .can_open_new_trade\
+        .assert_called_once_with()
+
+    preflight_runner.assert_called_once_with(
+        workflow.plan
+    )
+
+    trade_executor.execute.assert_called_once()
+
+
+def test_approve_blocks_expired_candidate() -> None:
+    (
+        service,
+        trade_executor,
+        portfolio_manager,
+        preflight_runner,
+    ) = make_service()
+
+    workflow = make_workflow(
+        created_at=(
+            datetime.now(
+                timezone.utc
+            )
+            - timedelta(
+                minutes=16
+            )
+        ),
+    )
+
+    with patch(
+        "dashboard.dashboard_approval_service."
+        "EXECUTION_ENABLED",
+        True,
+    ):
+        with pytest.raises(
+            RuntimeError,
+            match=(
+                "Trade candidate has expired"
+            ),
+        ):
+            service.approve(
+                workflow
+            )
+
+    portfolio_manager\
+        .can_open_new_trade\
+        .assert_not_called()
+
+    preflight_runner.assert_not_called()
+    trade_executor.execute.assert_not_called()
+
+
+def test_approve_rejects_naive_timestamp() -> None:
+    (
+        service,
+        trade_executor,
+        portfolio_manager,
+        preflight_runner,
+    ) = make_service()
+
+    workflow = replace(
+        make_workflow(),
+        created_at=datetime.now(),
+    )
+
+    with patch(
+        "dashboard.dashboard_approval_service."
+        "EXECUTION_ENABLED",
+        True,
+    ):
+        with pytest.raises(
+            RuntimeError,
+            match=(
+                "Trade workflow timestamp "
+                "is invalid"
+            ),
+        ):
+            service.approve(
+                workflow
+            )
+
+    portfolio_manager\
+        .can_open_new_trade\
+        .assert_not_called()
+
+    preflight_runner.assert_not_called()
+    trade_executor.execute.assert_not_called()
+
+
+def test_approve_rejects_future_timestamp() -> None:
+    (
+        service,
+        trade_executor,
+        portfolio_manager,
+        preflight_runner,
+    ) = make_service()
+
+    workflow = make_workflow(
+        created_at=(
+            datetime.now(
+                timezone.utc
+            )
+            + timedelta(
+                minutes=1
+            )
+        ),
+    )
+
+    with patch(
+        "dashboard.dashboard_approval_service."
+        "EXECUTION_ENABLED",
+        True,
+    ):
+        with pytest.raises(
+            RuntimeError,
+            match=(
+                "Trade workflow timestamp "
+                "is invalid"
+            ),
+        ):
+            service.approve(
+                workflow
+            )
+
+    portfolio_manager\
+        .can_open_new_trade\
+        .assert_not_called()
+
+    preflight_runner.assert_not_called()
+    trade_executor.execute.assert_not_called()
