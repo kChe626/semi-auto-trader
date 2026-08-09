@@ -6,7 +6,9 @@ from pathlib import Path
 from bootstrap import create_trade_repository
 from broker.alpaca_client import create_trading_client
 from broker.order_executor import OrderExecutor
-from broker.order_verifier import verify_submitted_order
+from broker.order_verifier import (
+    AlpacaOrderVerifier,
+)
 from broker.position_monitor import PositionMonitor
 from broker.preflight_service import run_broker_preflight
 from config.telegram_config import (
@@ -93,21 +95,7 @@ from application.trade_workflow import TradeWorkflow
 from broker.order_confirmation import (
     confirm_paper_order,
 )
-class AlpacaOrderVerifier:
-    def __init__(
-        self,
-        client,
-    ) -> None:
-        self._client = client
 
-    def verify(
-        self,
-        order_id: str,
-    ):
-        return verify_submitted_order(
-            client=self._client,
-            order_id=order_id,
-        )
 
 
 def signal_direction_is_allowed(

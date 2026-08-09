@@ -10,7 +10,6 @@ def import_app():
     Import app.py with the module-level dashboard run
     patched so importing the module has no UI side effects.
     """
-
     sys.modules.pop("app", None)
 
     with patch(
@@ -75,11 +74,14 @@ def test_create_presentation_mapper_wires_all_mappers(
         complete_mapper = Mock(
             name="complete-presentation-mapper"
         )
+
         complete_mapper_class.return_value = (
             complete_mapper
         )
 
-        result = app.create_presentation_mapper()
+        result = (
+            app.create_presentation_mapper()
+        )
 
     assert result is complete_mapper
 
@@ -96,7 +98,9 @@ def test_load_view_model_maps_loaded_dashboard_data(
 ) -> None:
     app = import_app()
 
-    service = Mock(name="service")
+    service = Mock(
+        name="service"
+    )
     presentation_mapper = Mock(
         name="presentation-mapper"
     )
@@ -106,10 +110,18 @@ def test_load_view_model_maps_loaded_dashboard_data(
     view_model = Mock(
         name="view-model"
     )
+    workflow_result = Mock(
+        name="workflow-result"
+    )
+
+    dashboard_data.workflow_result = (
+        workflow_result
+    )
 
     service.load_complete_dashboard_data.return_value = (
         dashboard_data
     )
+
     presentation_mapper.map_dashboard.return_value = (
         view_model
     )
@@ -130,6 +142,11 @@ def test_load_view_model_maps_loaded_dashboard_data(
 
     assert result is view_model
 
+    assert (
+        app._latest_workflow_result
+        is workflow_result
+    )
+
     service.load_complete_dashboard_data\
         .assert_called_once_with()
 
@@ -137,3 +154,141 @@ def test_load_view_model_maps_loaded_dashboard_data(
         .assert_called_once_with(
             dashboard_data
         )
+
+
+def test_approve_trade_executes_latest_workflow(
+) -> None:
+    app = import_app()
+
+    workflow_result = Mock(
+        name="workflow-result"
+    )
+    approval_service = Mock(
+        name="approval-service"
+    )
+    order = Mock(
+        name="order"
+    )
+    order.id = "ORDER-123"
+
+    app._latest_workflow_result = (
+        workflow_result
+    )
+
+    approval_service.approve.return_value = (
+        order
+    )
+
+    with (
+        patch.object(
+            app,
+            "create_approval_service",
+            return_value=approval_service,
+        ),
+        patch.object(
+            app.st,
+            "success",
+        ) as success,
+    ):
+        app.approve_trade(
+            Mock(
+                name="workflow-view-model"
+            )
+        )
+
+    approval_service.approve.assert_called_once_with(
+        workflow_result
+    )
+
+    success.assert_called_once_with(
+        "Paper order submitted successfully. "
+        "Order ID: ORDER-123"
+    )
+
+
+def test_approve_trade_handles_missing_workflow(
+) -> None:
+    app = import_app()
+
+    app._latest_workflow_result = None
+
+    with patch.object(
+        app.st,
+        "error",
+    ) as error:
+        app.approve_trade(
+            Mock(
+                name="workflow-view-model"
+            )
+        )
+
+    error.assert_called_once_with(
+        "No eligible trade workflow is available."
+    )
+
+
+def test_approve_trade_handles_approval_failure(
+) -> None:
+    app = import_app()
+
+    workflow_result = Mock(
+        name="workflow-result"
+    )
+    approval_service = Mock(
+        name="approval-service"
+    )
+
+    app._latest_workflow_result = (
+        workflow_result
+    )
+
+    approval_service.approve.side_effect = (
+        RuntimeError(
+            "Paper execution is disabled"
+        )
+    )
+
+    with (
+        patch.object(
+            app,
+            "create_approval_service",
+            return_value=approval_service,
+        ),
+        patch.object(
+            app.st,
+            "error",
+        ) as error,
+    ):
+        app.approve_trade(
+            Mock(
+                name="workflow-view-model"
+            )
+        )
+
+    approval_service.approve.assert_called_once_with(
+        workflow_result
+    )
+
+    error.assert_called_once_with(
+        "Trade approval failed: "
+        "Paper execution is disabled"
+    )
+
+
+def test_reject_trade_reports_no_order_submitted(
+) -> None:
+    app = import_app()
+
+    with patch.object(
+        app.st,
+        "info",
+    ) as info:
+        app.reject_trade(
+            Mock(
+                name="workflow-view-model"
+            )
+        )
+
+    info.assert_called_once_with(
+        "Trade rejected. No order was submitted."
+    )
