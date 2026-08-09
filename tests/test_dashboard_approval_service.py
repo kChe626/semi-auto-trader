@@ -46,21 +46,59 @@ def make_workflow(
     )
 
 
-def test_approve_executes_ready_workflow_with_generated_trade_id() -> None:
-    trade_executor = Mock()
+def make_service(
+    *,
+    trade_executor: Mock | None = None,
+    portfolio_manager: Mock | None = None,
+) -> tuple[
+    DashboardApprovalService,
+    Mock,
+    Mock,
+]:
+    if trade_executor is None:
+        trade_executor = Mock(
+            name="trade-executor"
+        )
+
+    if portfolio_manager is None:
+        portfolio_manager = Mock(
+            name="portfolio-manager"
+        )
+
+        portfolio_manager.can_open_new_trade.return_value = (
+            True,
+            "",
+        )
+
+    service = DashboardApprovalService(
+        trade_executor=trade_executor,
+        portfolio_manager=portfolio_manager,
+    )
+
+    return (
+        service,
+        trade_executor,
+        portfolio_manager,
+    )
+
+
+def test_approve_executes_ready_workflow_with_generated_trade_id(
+) -> None:
+    (
+        service,
+        trade_executor,
+        portfolio_manager,
+    ) = make_service()
 
     submitted_order = Mock(
         name="submitted-order"
     )
+
     trade_executor.execute.return_value = (
         submitted_order
     )
 
     workflow = make_workflow()
-
-    service = DashboardApprovalService(
-        trade_executor=trade_executor,
-    )
 
     with (
         patch(
@@ -80,6 +118,10 @@ def test_approve_executes_ready_workflow_with_generated_trade_id() -> None:
 
     assert result is submitted_order
 
+    portfolio_manager\
+        .can_open_new_trade\
+        .assert_called_once_with()
+
     trade_executor.execute.assert_called_once()
 
     executable_workflow = (
@@ -90,10 +132,12 @@ def test_approve_executes_ready_workflow_with_generated_trade_id() -> None:
         executable_workflow,
         WorkflowResult,
     )
+
     assert (
         executable_workflow.trade_id
         == "trade-123"
     )
+
     assert (
         executable_workflow.plan
         is workflow.plan
@@ -101,14 +145,14 @@ def test_approve_executes_ready_workflow_with_generated_trade_id() -> None:
 
 
 def test_approve_preserves_existing_trade_id() -> None:
-    trade_executor = Mock()
+    (
+        service,
+        trade_executor,
+        portfolio_manager,
+    ) = make_service()
 
     workflow = make_workflow(
         trade_id="existing-trade-456",
-    )
-
-    service = DashboardApprovalService(
-        trade_executor=trade_executor,
     )
 
     with (
@@ -126,6 +170,10 @@ def test_approve_preserves_existing_trade_id() -> None:
             workflow
         )
 
+    portfolio_manager\
+        .can_open_new_trade\
+        .assert_called_once_with()
+
     create_trade_id.assert_not_called()
 
     executable_workflow = (
@@ -138,15 +186,16 @@ def test_approve_preserves_existing_trade_id() -> None:
     )
 
 
-def test_approve_rejects_workflow_not_ready_for_approval() -> None:
-    trade_executor = Mock()
+def test_approve_rejects_workflow_not_ready_for_approval(
+) -> None:
+    (
+        service,
+        trade_executor,
+        portfolio_manager,
+    ) = make_service()
 
     workflow = make_workflow(
         ready_for_approval=False,
-    )
-
-    service = DashboardApprovalService(
-        trade_executor=trade_executor,
     )
 
     with pytest.raises(
@@ -160,18 +209,22 @@ def test_approve_rejects_workflow_not_ready_for_approval() -> None:
             workflow
         )
 
+    portfolio_manager\
+        .can_open_new_trade\
+        .assert_not_called()
+
     trade_executor.execute.assert_not_called()
 
 
 def test_approve_rejects_failed_preflight() -> None:
-    trade_executor = Mock()
+    (
+        service,
+        trade_executor,
+        portfolio_manager,
+    ) = make_service()
 
     workflow = make_workflow(
         preflight_approved=False,
-    )
-
-    service = DashboardApprovalService(
-        trade_executor=trade_executor,
     )
 
     with pytest.raises(
@@ -185,17 +238,21 @@ def test_approve_rejects_failed_preflight() -> None:
             workflow
         )
 
+    portfolio_manager\
+        .can_open_new_trade\
+        .assert_not_called()
+
     trade_executor.execute.assert_not_called()
 
 
 def test_approve_blocks_when_execution_disabled() -> None:
-    trade_executor = Mock()
+    (
+        service,
+        trade_executor,
+        portfolio_manager,
+    ) = make_service()
 
     workflow = make_workflow()
-
-    service = DashboardApprovalService(
-        trade_executor=trade_executor,
-    )
 
     with patch(
         "dashboard.dashboard_approval_service."
@@ -210,15 +267,19 @@ def test_approve_blocks_when_execution_disabled() -> None:
                 workflow
             )
 
+    portfolio_manager\
+        .can_open_new_trade\
+        .assert_not_called()
+
     trade_executor.execute.assert_not_called()
 
 
 def test_approve_rejects_non_workflow_result() -> None:
-    trade_executor = Mock()
-
-    service = DashboardApprovalService(
-        trade_executor=trade_executor,
-    )
+    (
+        service,
+        trade_executor,
+        portfolio_manager,
+    ) = make_service()
 
     with pytest.raises(
         TypeError,
@@ -230,5 +291,99 @@ def test_approve_rejects_non_workflow_result() -> None:
         service.approve(
             Mock()
         )
+
+    portfolio_manager\
+        .can_open_new_trade\
+        .assert_not_called()
+
+    trade_executor.execute.assert_not_called()
+
+
+def test_approve_blocks_when_portfolio_limit_reached() -> None:
+    portfolio_manager = Mock(
+        name="portfolio-manager"
+    )
+
+    portfolio_manager.can_open_new_trade.return_value = (
+        False,
+        "Maximum active trades (1) reached.",
+    )
+
+    (
+        service,
+        trade_executor,
+        _,
+    ) = make_service(
+        portfolio_manager=portfolio_manager,
+    )
+
+    workflow = make_workflow()
+
+    with patch(
+        "dashboard.dashboard_approval_service."
+        "EXECUTION_ENABLED",
+        True,
+    ):
+        with pytest.raises(
+            RuntimeError,
+            match=(
+                "Trade blocked by portfolio limits: "
+                "Maximum active trades"
+            ),
+        ):
+            service.approve(
+                workflow
+            )
+
+    portfolio_manager\
+        .can_open_new_trade\
+        .assert_called_once_with()
+
+    trade_executor.execute.assert_not_called()
+
+
+def test_approve_blocks_when_daily_loss_limit_reached() -> None:
+    portfolio_manager = Mock(
+        name="portfolio-manager"
+    )
+
+    portfolio_manager.can_open_new_trade.return_value = (
+        False,
+        (
+            "Daily loss limit reached: "
+            "P/L -$2,000.00, "
+            "limit -$2,000.00."
+        ),
+    )
+
+    (
+        service,
+        trade_executor,
+        _,
+    ) = make_service(
+        portfolio_manager=portfolio_manager,
+    )
+
+    workflow = make_workflow()
+
+    with patch(
+        "dashboard.dashboard_approval_service."
+        "EXECUTION_ENABLED",
+        True,
+    ):
+        with pytest.raises(
+            RuntimeError,
+            match=(
+                "Trade blocked by portfolio limits: "
+                "Daily loss limit reached"
+            ),
+        ):
+            service.approve(
+                workflow
+            )
+
+    portfolio_manager\
+        .can_open_new_trade\
+        .assert_called_once_with()
 
     trade_executor.execute.assert_not_called()

@@ -18,20 +18,30 @@ class TradeExecutorProtocol(Protocol):
         ...
 
 
+class PortfolioManagerProtocol(Protocol):
+    def can_open_new_trade(
+        self,
+    ) -> tuple[bool, str]:
+        ...
+
+
 class DashboardApprovalService:
     """
     Approve and execute dashboard trade workflows.
 
-    Execution remains disabled unless explicitly enabled
-    in trading configuration.
+    A fresh portfolio check is performed immediately
+    before execution so stale dashboard state cannot
+    bypass portfolio-level risk limits.
     """
 
     def __init__(
         self,
         *,
         trade_executor: TradeExecutorProtocol,
+        portfolio_manager: PortfolioManagerProtocol,
     ) -> None:
         self._trade_executor = trade_executor
+        self._portfolio_manager = portfolio_manager
 
     def approve(
         self,
@@ -61,6 +71,17 @@ class DashboardApprovalService:
         if not EXECUTION_ENABLED:
             raise RuntimeError(
                 "Paper execution is disabled"
+            )
+
+        allowed, reason = (
+            self._portfolio_manager
+            .can_open_new_trade()
+        )
+
+        if not allowed:
+            raise RuntimeError(
+                "Trade blocked by portfolio limits: "
+                f"{reason}"
             )
 
         trade_id = str(

@@ -53,6 +53,7 @@ from execution.sqlite_trade_repository import (
     SqliteTradeRepository,
 )
 from execution.trade_executor import TradeExecutor
+from risk.portfolio_manager import PortfolioManager
 from trade_management.exit_reconciler import (
     ExitReconciler,
 )
@@ -92,10 +93,6 @@ def create_trade_manager(
     """
     Construct the production broker-state lifecycle
     manager.
-
-    The manager synchronizes persisted trade state,
-    broker orders, broker positions, and confirmed
-    bracket exits.
     """
 
     monitor = PositionMonitor(
@@ -148,9 +145,8 @@ def create_dashboard_approval_service(
     """
     Construct the production dashboard approval path.
 
-    The dashboard uses the same broker submission,
-    verification, repository, and journal components
-    as the terminal trading flow.
+    A fresh portfolio risk check is performed immediately
+    before broker execution.
     """
 
     trading_client = create_trading_client()
@@ -176,8 +172,13 @@ def create_dashboard_approval_service(
         ),
     )
 
+    portfolio_manager = PortfolioManager(
+        trading_client
+    )
+
     return DashboardApprovalService(
         trade_executor=trade_executor,
+        portfolio_manager=portfolio_manager,
     )
 
 
@@ -189,10 +190,9 @@ def create_dashboard_service(
     Construct the production dashboard dependency
     graph.
 
-    The dashboard first synchronizes broker lifecycle
-    state so positions, closed trades, and analytics
-    reflect current Alpaca state before the snapshot
-    is built.
+    Broker lifecycle state is synchronized before
+    dashboard account, scanner, trade-history, and
+    analytics data are loaded.
     """
 
     trading_client = create_trading_client()
