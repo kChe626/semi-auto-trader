@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from config.trading_config import (
+    EXECUTION_ENABLED,
+)
 from dashboard.account_service import (
     AccountDashboardData,
     OpenPosition,
@@ -32,7 +35,9 @@ class AccountPresentationMapper:
 
         daily_change_percent = (
             self._calculate_change_percent(
-                current_value=account_data.account.equity,
+                current_value=(
+                    account_data.account.equity
+                ),
                 previous_value=(
                     account_data.account.last_equity
                 ),
@@ -59,8 +64,10 @@ class AccountPresentationMapper:
                 portfolio_value=self._format_currency(
                     account_data.account.portfolio_value
                 ),
-                daily_change=self._format_signed_currency(
-                    daily_change
+                daily_change=(
+                    self._format_signed_currency(
+                        daily_change
+                    )
                 ),
                 daily_change_percent=(
                     self._format_signed_percent(
@@ -81,9 +88,16 @@ class AccountPresentationMapper:
                         ),
                     )
                 ),
+                execution_status=(
+                    "ENABLED"
+                    if EXECUTION_ENABLED
+                    else "DISABLED"
+                ),
             ),
             positions=positions,
-            has_open_positions=bool(positions),
+            has_open_positions=bool(
+                positions
+            ),
         )
 
     def _map_position(
@@ -96,8 +110,10 @@ class AccountPresentationMapper:
             quantity=self._format_quantity(
                 position.quantity
             ),
-            average_entry_price=self._format_currency(
-                position.average_entry_price
+            average_entry_price=(
+                self._format_currency(
+                    position.average_entry_price
+                )
             ),
             current_price=self._format_currency(
                 position.current_price
@@ -144,9 +160,16 @@ class AccountPresentationMapper:
     def _format_signed_currency(
         value: float,
     ) -> str:
-        sign = "+" if value >= 0 else "-"
+        sign = (
+            "+"
+            if value >= 0
+            else "-"
+        )
 
-        return f"{sign}${abs(value):,.2f}"
+        return (
+            f"{sign}"
+            f"${abs(value):,.2f}"
+        )
 
     @staticmethod
     def _format_signed_percent(
@@ -159,9 +182,15 @@ class AccountPresentationMapper:
         value: float,
     ) -> str:
         if value.is_integer():
-            return str(int(value))
+            return str(
+                int(value)
+            )
 
-        return f"{value:.4f}".rstrip("0").rstrip(".")
+        return (
+            f"{value:.4f}"
+            .rstrip("0")
+            .rstrip(".")
+        )
 
     @staticmethod
     def _build_trading_status(

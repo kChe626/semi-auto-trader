@@ -63,6 +63,7 @@ def test_map_account_section_returns_view_model() -> None:
         result,
         AccountSectionViewModel,
     )
+
     assert isinstance(
         result.metrics,
         AccountMetricsViewModel,
@@ -85,6 +86,7 @@ def test_account_metrics_are_formatted() -> None:
         daily_change="+$1,500.00",
         daily_change_percent="+1.50%",
         trading_status="Trading Enabled",
+        execution_status="DISABLED",
     )
 
 
@@ -101,6 +103,7 @@ def test_negative_daily_change_is_formatted() -> None:
     assert result.metrics.daily_change == (
         "-$1,000.00"
     )
+
     assert result.metrics.daily_change_percent == (
         "-1.00%"
     )
@@ -225,6 +228,18 @@ def test_account_blocked_takes_priority() -> None:
     )
 
 
+def test_execution_status_is_disabled() -> None:
+    mapper = AccountPresentationMapper()
+
+    result = mapper.map_account_section(
+        make_account_data()
+    )
+
+    assert result.metrics.execution_status == (
+        "DISABLED"
+    )
+
+
 def test_zero_profit_is_formatted_as_positive_zero() -> None:
     mapper = AccountPresentationMapper()
 
@@ -252,6 +267,7 @@ def test_zero_profit_is_formatted_as_positive_zero() -> None:
         .unrealized_profit_loss
         == "+$0.00"
     )
+
     assert (
         result
         .positions[0]

@@ -205,38 +205,51 @@ class StreamlitDashboardRenderer:
         self._st.subheader("Trade Approval")
 
         if workflow.status == "READY FOR APPROVAL":
-            self._st.success(workflow.status)
+            self._st.success(
+                workflow.status
+            )
         else:
-            self._st.error(workflow.status)
+            self._st.error(
+                workflow.status
+            )
 
         self._st.write(
             f"Symbol: {workflow.symbol}"
         )
+
         self._st.write(
             f"Side: {workflow.side}"
         )
+
         self._st.write(
             f"Score: {workflow.score}"
         )
+
         self._st.write(
             "Minimum Score: "
             f"{workflow.minimum_score}"
         )
+
         self._st.write(
             f"Entry: {workflow.entry_price}"
         )
+
         self._st.write(
             f"Stop: {workflow.stop_price}"
         )
+
         self._st.write(
             f"Target: {workflow.target_price}"
         )
+
         self._st.write(
             f"Quantity: {workflow.quantity}"
         )
+
         self._st.write(
             f"Total Risk: {workflow.total_risk}"
         )
+
         self._st.write(
             "Risk/Reward: "
             f"{workflow.risk_reward_ratio}"
@@ -254,7 +267,9 @@ class StreamlitDashboardRenderer:
             )
 
         for reason in workflow.rejection_reasons:
-            self._st.warning(reason)
+            self._st.warning(
+                reason
+            )
 
     def render_analytics_section(
         self,
@@ -264,11 +279,17 @@ class StreamlitDashboardRenderer:
         Render closed-trade performance analytics.
         """
 
-        self._st.header("Performance Analytics")
+        self._st.header(
+            "Performance Analytics"
+        )
 
-        self._render_analytics_metrics(analytics)
+        self._render_analytics_metrics(
+            analytics
+        )
 
-        if self._analytics_is_empty(analytics):
+        if self._analytics_is_empty(
+            analytics
+        ):
             self._st.info(
                 "No closed trades have been recorded yet. "
                 "Performance analytics will appear after "
@@ -330,7 +351,9 @@ class StreamlitDashboardRenderer:
         Render completed-trade history.
         """
 
-        self._st.header("Trade History")
+        self._st.header(
+            "Trade History"
+        )
 
         if not trade_history.has_rows:
             self._st.info(
@@ -351,7 +374,9 @@ class StreamlitDashboardRenderer:
                 "Realized P/L": (
                     row.realized_profit_loss
                 ),
-                "R Multiple": row.r_multiple,
+                "R Multiple": (
+                    row.r_multiple
+                ),
                 "Holding Duration": (
                     row.holding_duration
                 ),
@@ -369,7 +394,9 @@ class StreamlitDashboardRenderer:
         self,
         account: AccountSectionViewModel,
     ) -> None:
-        columns = self._st.columns(4)
+        columns = self._st.columns(
+            4
+        )
 
         columns[0].metric(
             "Portfolio Value",
@@ -399,7 +426,9 @@ class StreamlitDashboardRenderer:
         self,
         account: AccountSectionViewModel,
     ) -> None:
-        columns = self._st.columns(2)
+        columns = self._st.columns(
+            3
+        )
 
         columns[0].metric(
             "Trading Status",
@@ -407,15 +436,24 @@ class StreamlitDashboardRenderer:
         )
 
         columns[1].metric(
+            "Paper Execution",
+            account.metrics.execution_status,
+        )
+
+        columns[2].metric(
             "Open Positions",
-            str(len(account.positions)),
+            str(
+                len(account.positions)
+            ),
         )
 
     def _render_positions(
         self,
         account: AccountSectionViewModel,
     ) -> None:
-        self._st.subheader("Open Positions")
+        self._st.subheader(
+            "Open Positions"
+        )
 
         if not account.has_open_positions:
             self._st.info(
@@ -437,7 +475,9 @@ class StreamlitDashboardRenderer:
                 "Market Value": (
                     position.market_value
                 ),
-                "Cost Basis": position.cost_basis,
+                "Cost Basis": (
+                    position.cost_basis
+                ),
                 "Unrealized P/L": (
                     position.unrealized_profit_loss
                 ),
@@ -502,7 +542,9 @@ class StreamlitDashboardRenderer:
             for point in chart.points
         ]
 
-        self._st.subheader(chart.title)
+        self._st.subheader(
+            chart.title
+        )
 
         self._st.line_chart(
             rows,
@@ -525,7 +567,9 @@ class StreamlitDashboardRenderer:
             for point in chart.points
         ]
 
-        self._st.subheader(chart.title)
+        self._st.subheader(
+            chart.title
+        )
 
         self._st.bar_chart(
             rows,
@@ -542,7 +586,9 @@ class StreamlitDashboardRenderer:
         if not table.rows:
             return
 
-        self._st.subheader(title)
+        self._st.subheader(
+            title
+        )
 
         rows = [
             dict(

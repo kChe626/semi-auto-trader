@@ -17,6 +17,7 @@ class AccountMetricsViewModel:
     daily_change: str
     daily_change_percent: str
     trading_status: str
+    execution_status: str
 
 
 @dataclass(frozen=True)
