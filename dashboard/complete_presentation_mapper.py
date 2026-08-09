@@ -32,6 +32,8 @@ class TradeWorkflowPresentationMapperProtocol(
     def map(
         self,
         workflow_result,
+        *,
+        scanner_signals=(),
     ):
         ...
 
@@ -98,7 +100,10 @@ class CompleteDashboardPresentationMapper:
         )
 
         workflow = self._workflow_mapper.map(
-            dashboard_data.workflow_result
+            dashboard_data.workflow_result,
+            scanner_signals=(
+                dashboard_data.scanner_signals
+            ),
         )
 
         analytics = (

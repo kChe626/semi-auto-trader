@@ -3,6 +3,7 @@ from dashboard.trade_workflow_presentation_mapper import (
 )
 from models.preflight_result import PreflightResult
 from models.trade_plan import TradePlan
+from models.trade_signal import TradeSignal
 from models.workflow_result import WorkflowResult
 
 
@@ -65,10 +66,12 @@ def test_maps_rejected_workflow() -> None:
     view_model = mapper.map(result)
 
     assert view_model.status == "REJECTED"
+
     assert view_model.rejection_reasons == (
         "Market is closed.",
         "An open order already exists for NVDA.",
     )
+
 
 def test_none_maps_to_no_eligible_trade() -> None:
     mapper = TradeWorkflowPresentationMapper()
@@ -77,8 +80,119 @@ def test_none_maps_to_no_eligible_trade() -> None:
 
     assert result.symbol == "—"
     assert result.side == "—"
+    assert result.score == "—"
     assert result.status == "NO ELIGIBLE TRADE"
+
     assert result.rejection_reasons == (
-        "No eligible trade candidate "
-        "is currently available.",
+        "No trade signals were found "
+        "by the scanner.",
     )
+
+
+def test_sell_signals_explain_short_trades_disabled(
+) -> None:
+    mapper = TradeWorkflowPresentationMapper()
+
+    signals = (
+        TradeSignal(
+            symbol="MS",
+            signal_type="SELL",
+            price=216.33,
+            reason=(
+                "Bearish SMA crossover "
+                "confirmed by RSI 51.84"
+            ),
+        ),
+        TradeSignal(
+            symbol="HOOD",
+            signal_type="SELL",
+            price=93.29,
+            reason=(
+                "Bearish SMA crossover "
+                "confirmed by RSI 45.68"
+            ),
+        ),
+    )
+
+    result = mapper.map(
+        None,
+        scanner_signals=signals,
+    )
+
+    assert result.status == "NO ELIGIBLE TRADE"
+
+    assert result.rejection_reasons == (
+        (
+            "MS: SELL signal was excluded because "
+            "short trades are disabled."
+        ),
+        (
+            "HOOD: SELL signal was excluded because "
+            "short trades are disabled."
+        ),
+    )
+
+
+def test_unexplained_signals_use_filter_summary() -> None:
+    mapper = TradeWorkflowPresentationMapper()
+
+    signals = (
+        TradeSignal(
+            symbol="AAPL",
+            signal_type="BUY",
+            price=200.00,
+            reason="Bullish test signal",
+        ),
+    )
+
+    result = mapper.map(
+        None,
+        scanner_signals=signals,
+    )
+
+    assert result.status == "NO ELIGIBLE TRADE"
+
+    assert result.rejection_reasons == (
+        (
+            "Scanner signals were found, but no "
+            "candidate remained after direction, "
+            "risk, preflight, and minimum-score "
+            "filters."
+        ),
+    )
+
+
+def test_score_is_formatted_when_available() -> None:
+    workflow = WorkflowResult(
+        ready_for_approval=True,
+        plan=create_test_plan(),
+        preflight=PreflightResult(
+            approved=True,
+            reasons=[],
+        ),
+        score=82.456,
+    )
+
+    mapper = TradeWorkflowPresentationMapper()
+
+    result = mapper.map(workflow)
+
+    assert result.score == "82.46"
+
+
+def test_missing_score_uses_dash() -> None:
+    workflow = WorkflowResult(
+        ready_for_approval=True,
+        plan=create_test_plan(),
+        preflight=PreflightResult(
+            approved=True,
+            reasons=[],
+        ),
+        score=None,
+    )
+
+    mapper = TradeWorkflowPresentationMapper()
+
+    result = mapper.map(workflow)
+
+    assert result.score == "—"

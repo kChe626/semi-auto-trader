@@ -174,7 +174,7 @@ def test_scanner_mapper_receives_scanner_signals() -> None:
         )
 
 
-def test_workflow_mapper_receives_workflow_result() -> None:
+def test_workflow_mapper_receives_workflow_and_scanner_signals() -> None:
     (
         mapper,
         _,
@@ -189,7 +189,10 @@ def test_workflow_mapper_receives_workflow_result() -> None:
     mapper.map_dashboard(dashboard_data)
 
     workflow_mapper.map.assert_called_once_with(
-        dashboard_data.workflow_result
+        dashboard_data.workflow_result,
+        scanner_signals=(
+            dashboard_data.scanner_signals
+        ),
     )
 
 
@@ -250,7 +253,9 @@ def test_sections_are_mapped_in_expected_order() -> None:
     )
 
     workflow_mapper.map.side_effect = (
-        lambda _: calls.append("workflow") or Mock()
+        lambda _, **__: (
+            calls.append("workflow") or Mock()
+        )
     )
 
     analytics_mapper.map_analytics_section.side_effect = (
