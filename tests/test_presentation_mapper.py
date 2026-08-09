@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from unittest.mock import patch
+
 from dashboard.account_service import (
     AccountDashboardData,
     AccountSummary,
@@ -73,9 +75,14 @@ def test_map_account_section_returns_view_model() -> None:
 def test_account_metrics_are_formatted() -> None:
     mapper = AccountPresentationMapper()
 
-    result = mapper.map_account_section(
-        make_account_data()
-    )
+    with patch(
+        "dashboard.presentation_mapper."
+        "EXECUTION_ENABLED",
+        False,
+    ):
+        result = mapper.map_account_section(
+            make_account_data()
+        )
 
     assert result.metrics == AccountMetricsViewModel(
         status="ACTIVE",
@@ -231,12 +238,36 @@ def test_account_blocked_takes_priority() -> None:
 def test_execution_status_is_disabled() -> None:
     mapper = AccountPresentationMapper()
 
-    result = mapper.map_account_section(
-        make_account_data()
+    with patch(
+        "dashboard.presentation_mapper."
+        "EXECUTION_ENABLED",
+        False,
+    ):
+        result = mapper.map_account_section(
+            make_account_data()
+        )
+
+    assert (
+        result.metrics.execution_status
+        == "DISABLED"
     )
 
-    assert result.metrics.execution_status == (
-        "DISABLED"
+
+def test_execution_status_is_enabled() -> None:
+    mapper = AccountPresentationMapper()
+
+    with patch(
+        "dashboard.presentation_mapper."
+        "EXECUTION_ENABLED",
+        True,
+    ):
+        result = mapper.map_account_section(
+            make_account_data()
+        )
+
+    assert (
+        result.metrics.execution_status
+        == "ENABLED"
     )
 
 

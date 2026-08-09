@@ -12,7 +12,7 @@ Percentage values use decimal notation:
 # EXECUTION
 # ============================================================
 
-EXECUTION_ENABLED = False
+EXECUTION_ENABLED = True
 
 
 # ============================================================
