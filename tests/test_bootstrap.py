@@ -20,6 +20,12 @@ def test_create_dashboard_service_wires_trade_workflow(
     trade_journal = Mock(
         name="trade-journal",
     )
+    trade_repository = Mock(
+        name="trade-repository",
+    )
+    trade_manager = Mock(
+        name="trade-manager",
+    )
     closed_trade_repository = Mock(
         name="closed-trade-repository",
     )
@@ -30,9 +36,14 @@ def test_create_dashboard_service_wires_trade_workflow(
         name="dashboard-service",
     )
 
-    account = Mock(name="account")
+    account = Mock(
+        name="account"
+    )
     account.equity = "100000.00"
-    trading_client.get_account.return_value = account
+
+    trading_client.get_account.return_value = (
+        account
+    )
 
     with (
         patch.object(
@@ -47,9 +58,19 @@ def test_create_dashboard_service_wires_trade_workflow(
         ) as trade_journal_class,
         patch.object(
             bootstrap,
+            "create_trade_repository",
+            return_value=trade_repository,
+        ) as trade_repository_factory,
+        patch.object(
+            bootstrap,
+            "create_trade_manager",
+            return_value=trade_manager,
+        ) as trade_manager_factory,
+        patch.object(
+            bootstrap,
             "ClosedTradeRepository",
             return_value=closed_trade_repository,
-        ) as repository_class,
+        ) as closed_repository_class,
         patch.object(
             bootstrap,
             "TradeWorkflow",
@@ -61,8 +82,10 @@ def test_create_dashboard_service_wires_trade_workflow(
             return_value=dashboard_service,
         ) as service_factory,
     ):
-        result = bootstrap.create_dashboard_service(
-            database_path=database_path,
+        result = (
+            bootstrap.create_dashboard_service(
+                database_path=database_path,
+            )
         )
 
     assert result is dashboard_service
@@ -71,7 +94,19 @@ def test_create_dashboard_service_wires_trade_workflow(
         database_path=database_path,
     )
 
-    repository_class.assert_called_once_with(
+    trade_repository_factory.assert_called_once_with(
+        database_path=database_path,
+    )
+
+    trade_manager_factory.assert_called_once_with(
+        trading_client=trading_client,
+        trade_journal=trade_journal,
+        trade_repository=trade_repository,
+    )
+
+    trade_manager.start_cycle.assert_called_once_with()
+
+    closed_repository_class.assert_called_once_with(
         event_source=trade_journal,
     )
 
@@ -131,8 +166,10 @@ def test_create_trade_repository_uses_database_path(
         "SqliteTradeRepository",
         return_value=repository,
     ) as repository_class:
-        result = bootstrap.create_trade_repository(
-            database_path=database_path,
+        result = (
+            bootstrap.create_trade_repository(
+                database_path=database_path,
+            )
         )
 
     assert result is repository

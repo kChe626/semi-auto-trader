@@ -96,6 +96,7 @@ from broker.order_confirmation import (
     confirm_paper_order,
 )
 
+from broker.exit_lookup import BrokerExitLookup
 
 
 def signal_direction_is_allowed(
@@ -130,11 +131,18 @@ def synchronize_broker_state(
         order_reconciler = TradeStateReconciler(
             journal
         )
+
         position_reconciler = PositionReconciler(
             journal
         )
+
+        exit_lookup = BrokerExitLookup(
+            trading_client
+        )
+
         exit_reconciler = ExitReconciler(
-            journal
+            journal,
+            exit_lookup=exit_lookup,
         )
 
         order_lifecycle_service = None
@@ -158,6 +166,7 @@ def synchronize_broker_state(
         trade_manager = TradeManager(
             lifecycle_engine
         )
+
         trade_manager.start_cycle()
 
     except Exception as error:
@@ -185,6 +194,8 @@ def synchronize_broker_state(
     print()
 
     return True
+
+
 
 
 def main(

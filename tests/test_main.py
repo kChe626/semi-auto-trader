@@ -24,7 +24,9 @@ def create_test_plan() -> TradePlan:
     )
 
 
-def configure_common_mocks(monkeypatch):
+def configure_common_mocks(
+    monkeypatch,
+):
     client = MagicMock()
 
     client.get_account.return_value = SimpleNamespace(
@@ -112,7 +114,7 @@ def configure_common_mocks(monkeypatch):
 def test_main_stops_when_no_signals(
     monkeypatch,
     capsys,
-):
+) -> None:
     client = MagicMock()
 
     client.get_account.return_value = SimpleNamespace(
@@ -147,7 +149,7 @@ def test_main_stops_when_no_signals(
 
 def test_execution_disabled_never_submits_order(
     monkeypatch,
-):
+) -> None:
     _, executor = configure_common_mocks(
         monkeypatch
     )
@@ -165,7 +167,7 @@ def test_execution_disabled_never_submits_order(
 
 def test_cancelled_confirmation_never_submits_order(
     monkeypatch,
-):
+) -> None:
     _, executor = configure_common_mocks(
         monkeypatch
     )
@@ -189,7 +191,7 @@ def test_cancelled_confirmation_never_submits_order(
 
 def test_main_uses_injected_trade_approval(
     monkeypatch,
-):
+) -> None:
     configure_common_mocks(
         monkeypatch
     )
@@ -213,7 +215,7 @@ def test_main_uses_injected_trade_approval(
 
 def test_confirmed_order_is_submitted_once(
     monkeypatch,
-):
+) -> None:
     _, executor = configure_common_mocks(
         monkeypatch
     )
@@ -244,7 +246,7 @@ def test_confirmed_order_is_submitted_once(
 
 def test_verified_order_is_saved_for_restart_recovery(
     monkeypatch,
-):
+) -> None:
     _, executor = configure_common_mocks(
         monkeypatch
     )
@@ -295,7 +297,7 @@ def test_verified_order_is_saved_for_restart_recovery(
 
 
 def test_synchronize_broker_state_returns_success(
-):
+) -> None:
     result = main.synchronize_broker_state(
         trading_client=MagicMock(),
         journal=MagicMock(),
@@ -305,9 +307,87 @@ def test_synchronize_broker_state_returns_success(
     assert result is True
 
 
+def test_synchronize_broker_state_wires_exit_lookup(
+    monkeypatch,
+) -> None:
+    trading_client = MagicMock()
+    journal = MagicMock()
+
+    exit_lookup = MagicMock(
+        name="exit-lookup"
+    )
+
+    exit_reconciler = MagicMock(
+        name="exit-reconciler"
+    )
+
+    lifecycle_engine = MagicMock(
+        name="lifecycle-engine"
+    )
+
+    exit_lookup_class = MagicMock(
+        return_value=exit_lookup
+    )
+
+    exit_reconciler_class = MagicMock(
+        return_value=exit_reconciler
+    )
+
+    lifecycle_engine_class = MagicMock(
+        return_value=lifecycle_engine
+    )
+
+    monkeypatch.setattr(
+        main,
+        "BrokerExitLookup",
+        exit_lookup_class,
+    )
+
+    monkeypatch.setattr(
+        main,
+        "ExitReconciler",
+        exit_reconciler_class,
+    )
+
+    monkeypatch.setattr(
+        main,
+        "TradeLifecycleEngine",
+        lifecycle_engine_class,
+    )
+
+    result = main.synchronize_broker_state(
+        trading_client=trading_client,
+        journal=journal,
+        notification_sender=MagicMock(),
+    )
+
+    assert result is True
+
+    exit_lookup_class.assert_called_once_with(
+        trading_client
+    )
+
+    exit_reconciler_class.assert_called_once_with(
+        journal,
+        exit_lookup=exit_lookup,
+    )
+
+    lifecycle_engine_class.assert_called_once()
+
+    assert (
+        lifecycle_engine_class
+        .call_args
+        .kwargs["exit_reconciler"]
+        is exit_reconciler
+    )
+
+    lifecycle_engine.synchronize\
+        .assert_called_once_with()
+
+
 def test_synchronize_broker_state_accepts_trade_repository(
     monkeypatch,
-):
+) -> None:
     engine = MagicMock()
 
     monkeypatch.setattr(
@@ -328,7 +408,7 @@ def test_synchronize_broker_state_accepts_trade_repository(
 
 def test_run_production_wires_persistent_dependencies(
     monkeypatch,
-):
+) -> None:
     called = {}
 
     monkeypatch.setattr(
@@ -352,7 +432,9 @@ def test_run_production_wires_persistent_dependencies(
     monkeypatch.setattr(
         main,
         "main",
-        lambda **kwargs: called.update(kwargs),
+        lambda **kwargs: called.update(
+            kwargs
+        ),
     )
 
     main.run_production()
@@ -370,7 +452,7 @@ def test_run_production_wires_persistent_dependencies(
 
 def test_main_uses_trade_approval_factory(
     monkeypatch,
-):
+) -> None:
     configure_common_mocks(
         monkeypatch
     )

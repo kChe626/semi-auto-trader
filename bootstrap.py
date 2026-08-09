@@ -19,8 +19,10 @@ from analytics.yearly_performance import (
 )
 from application.trade_workflow import TradeWorkflow
 from broker.alpaca_client import create_trading_client
+from broker.exit_lookup import BrokerExitLookup
 from broker.order_executor import OrderExecutor
 from broker.order_verifier import AlpacaOrderVerifier
+from broker.position_monitor import PositionMonitor
 from broker.preflight_service import run_broker_preflight
 from config.trading_config import (
     MAX_POSITION_PERCENT,
@@ -44,10 +46,28 @@ from database.trade_journal import (
     DATABASE_PATH,
     TradeJournal,
 )
+from execution.order_lifecycle_service import (
+    OrderLifecycleService,
+)
 from execution.sqlite_trade_repository import (
     SqliteTradeRepository,
 )
 from execution.trade_executor import TradeExecutor
+from trade_management.exit_reconciler import (
+    ExitReconciler,
+)
+from trade_management.lifecycle_engine import (
+    TradeLifecycleEngine,
+)
+from trade_management.position_reconciler import (
+    PositionReconciler,
+)
+from trade_management.state_reconciler import (
+    TradeStateReconciler,
+)
+from trade_management.trade_manager import (
+    TradeManager,
+)
 
 
 def create_trade_repository(
@@ -60,6 +80,64 @@ def create_trade_repository(
 
     return SqliteTradeRepository(
         database_path=database_path,
+    )
+
+
+def create_trade_manager(
+    *,
+    trading_client,
+    trade_journal: TradeJournal,
+    trade_repository: SqliteTradeRepository,
+) -> TradeManager:
+    """
+    Construct the production broker-state lifecycle
+    manager.
+
+    The manager synchronizes persisted trade state,
+    broker orders, broker positions, and confirmed
+    bracket exits.
+    """
+
+    monitor = PositionMonitor(
+        trading_client
+    )
+
+    order_reconciler = TradeStateReconciler(
+        trade_journal
+    )
+
+    position_reconciler = PositionReconciler(
+        trade_journal
+    )
+
+    exit_lookup = BrokerExitLookup(
+        trading_client
+    )
+
+    exit_reconciler = ExitReconciler(
+        trade_journal,
+        exit_lookup=exit_lookup,
+    )
+
+    order_lifecycle_service = (
+        OrderLifecycleService(
+            broker=trading_client,
+            repository=trade_repository,
+        )
+    )
+
+    lifecycle_engine = TradeLifecycleEngine(
+        monitor=monitor,
+        order_reconciler=order_reconciler,
+        position_reconciler=position_reconciler,
+        exit_reconciler=exit_reconciler,
+        order_lifecycle_service=(
+            order_lifecycle_service
+        ),
+    )
+
+    return TradeManager(
+        lifecycle_engine
     )
 
 
@@ -108,17 +186,13 @@ def create_dashboard_service(
     database_path: Path | str = DATABASE_PATH,
 ) -> DashboardCompositionService:
     """
-    Construct the production dashboard dependency graph.
+    Construct the production dashboard dependency
+    graph.
 
-    This composition root connects:
-
-    - Alpaca paper-trading account data
-    - the SQLite trade journal
-    - the closed-trade repository
-    - the trade preparation workflow
-    - broker preflight validation
-    - all dashboard analytics calculators
-    - the dashboard composition service
+    The dashboard first synchronizes broker lifecycle
+    state so positions, closed trades, and analytics
+    reflect current Alpaca state before the snapshot
+    is built.
     """
 
     trading_client = create_trading_client()
@@ -127,11 +201,24 @@ def create_dashboard_service(
         database_path=database_path,
     )
 
+    trade_repository = create_trade_repository(
+        database_path=database_path,
+    )
+
+    trade_manager = create_trade_manager(
+        trading_client=trading_client,
+        trade_journal=trade_journal,
+        trade_repository=trade_repository,
+    )
+
+    trade_manager.start_cycle()
+
     closed_trade_repository = ClosedTradeRepository(
         event_source=trade_journal,
     )
 
     account = trading_client.get_account()
+
     account_equity = float(
         account.equity
     )
@@ -144,9 +231,15 @@ def create_dashboard_service(
     trade_workflow = TradeWorkflow(
         account_equity=account_equity,
         risk_percent=RISK_PERCENT,
-        max_position_percent=MAX_POSITION_PERCENT,
-        stop_loss_percent=STOP_LOSS_PERCENT,
-        reward_risk_ratio=REWARD_RISK_RATIO,
+        max_position_percent=(
+            MAX_POSITION_PERCENT
+        ),
+        stop_loss_percent=(
+            STOP_LOSS_PERCENT
+        ),
+        reward_risk_ratio=(
+            REWARD_RISK_RATIO
+        ),
         preflight_runner=preflight_runner,
     )
 
@@ -159,7 +252,9 @@ def create_dashboard_service(
         performance_statistics=(
             PerformanceStatistics
         ),
-        equity_curve=EquityCurveCalculator,
+        equity_curve=(
+            EquityCurveCalculator
+        ),
         drawdown_calculator=(
             DrawdownCalculator
         ),
