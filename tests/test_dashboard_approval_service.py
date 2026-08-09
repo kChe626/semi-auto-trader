@@ -50,8 +50,10 @@ def make_service(
     *,
     trade_executor: Mock | None = None,
     portfolio_manager: Mock | None = None,
+    preflight_runner: Mock | None = None,
 ) -> tuple[
     DashboardApprovalService,
+    Mock,
     Mock,
     Mock,
 ]:
@@ -70,15 +72,27 @@ def make_service(
             "",
         )
 
+    if preflight_runner is None:
+        preflight_runner = Mock(
+            name="preflight-runner"
+        )
+
+        preflight_runner.return_value = PreflightResult(
+            approved=True,
+            reasons=[],
+        )
+
     service = DashboardApprovalService(
         trade_executor=trade_executor,
         portfolio_manager=portfolio_manager,
+        preflight_runner=preflight_runner,
     )
 
     return (
         service,
         trade_executor,
         portfolio_manager,
+        preflight_runner,
     )
 
 
@@ -88,6 +102,7 @@ def test_approve_executes_ready_workflow_with_generated_trade_id(
         service,
         trade_executor,
         portfolio_manager,
+        preflight_runner,
     ) = make_service()
 
     submitted_order = Mock(
@@ -122,6 +137,10 @@ def test_approve_executes_ready_workflow_with_generated_trade_id(
         .can_open_new_trade\
         .assert_called_once_with()
 
+    preflight_runner.assert_called_once_with(
+        workflow.plan
+    )
+
     trade_executor.execute.assert_called_once()
 
     executable_workflow = (
@@ -143,12 +162,15 @@ def test_approve_executes_ready_workflow_with_generated_trade_id(
         is workflow.plan
     )
 
+    assert executable_workflow.preflight.approved is True
+
 
 def test_approve_preserves_existing_trade_id() -> None:
     (
         service,
         trade_executor,
         portfolio_manager,
+        preflight_runner,
     ) = make_service()
 
     workflow = make_workflow(
@@ -174,6 +196,10 @@ def test_approve_preserves_existing_trade_id() -> None:
         .can_open_new_trade\
         .assert_called_once_with()
 
+    preflight_runner.assert_called_once_with(
+        workflow.plan
+    )
+
     create_trade_id.assert_not_called()
 
     executable_workflow = (
@@ -192,6 +218,7 @@ def test_approve_rejects_workflow_not_ready_for_approval(
         service,
         trade_executor,
         portfolio_manager,
+        preflight_runner,
     ) = make_service()
 
     workflow = make_workflow(
@@ -213,35 +240,7 @@ def test_approve_rejects_workflow_not_ready_for_approval(
         .can_open_new_trade\
         .assert_not_called()
 
-    trade_executor.execute.assert_not_called()
-
-
-def test_approve_rejects_failed_preflight() -> None:
-    (
-        service,
-        trade_executor,
-        portfolio_manager,
-    ) = make_service()
-
-    workflow = make_workflow(
-        preflight_approved=False,
-    )
-
-    with pytest.raises(
-        ValueError,
-        match=(
-            "Trade workflow did not pass "
-            "broker preflight"
-        ),
-    ):
-        service.approve(
-            workflow
-        )
-
-    portfolio_manager\
-        .can_open_new_trade\
-        .assert_not_called()
-
+    preflight_runner.assert_not_called()
     trade_executor.execute.assert_not_called()
 
 
@@ -250,6 +249,7 @@ def test_approve_blocks_when_execution_disabled() -> None:
         service,
         trade_executor,
         portfolio_manager,
+        preflight_runner,
     ) = make_service()
 
     workflow = make_workflow()
@@ -271,6 +271,7 @@ def test_approve_blocks_when_execution_disabled() -> None:
         .can_open_new_trade\
         .assert_not_called()
 
+    preflight_runner.assert_not_called()
     trade_executor.execute.assert_not_called()
 
 
@@ -279,6 +280,7 @@ def test_approve_rejects_non_workflow_result() -> None:
         service,
         trade_executor,
         portfolio_manager,
+        preflight_runner,
     ) = make_service()
 
     with pytest.raises(
@@ -296,6 +298,7 @@ def test_approve_rejects_non_workflow_result() -> None:
         .can_open_new_trade\
         .assert_not_called()
 
+    preflight_runner.assert_not_called()
     trade_executor.execute.assert_not_called()
 
 
@@ -313,6 +316,7 @@ def test_approve_blocks_when_portfolio_limit_reached() -> None:
         service,
         trade_executor,
         _,
+        preflight_runner,
     ) = make_service(
         portfolio_manager=portfolio_manager,
     )
@@ -339,6 +343,7 @@ def test_approve_blocks_when_portfolio_limit_reached() -> None:
         .can_open_new_trade\
         .assert_called_once_with()
 
+    preflight_runner.assert_not_called()
     trade_executor.execute.assert_not_called()
 
 
@@ -360,6 +365,7 @@ def test_approve_blocks_when_daily_loss_limit_reached() -> None:
         service,
         trade_executor,
         _,
+        preflight_runner,
     ) = make_service(
         portfolio_manager=portfolio_manager,
     )
@@ -386,4 +392,109 @@ def test_approve_blocks_when_daily_loss_limit_reached() -> None:
         .can_open_new_trade\
         .assert_called_once_with()
 
+    preflight_runner.assert_not_called()
     trade_executor.execute.assert_not_called()
+
+
+def test_approve_blocks_when_fresh_preflight_rejects() -> None:
+    preflight_runner = Mock(
+        name="preflight-runner"
+    )
+
+    preflight_runner.return_value = PreflightResult(
+        approved=False,
+        reasons=[
+            "Market is closed.",
+        ],
+    )
+
+    (
+        service,
+        trade_executor,
+        portfolio_manager,
+        _,
+    ) = make_service(
+        preflight_runner=preflight_runner,
+    )
+
+    workflow = make_workflow()
+
+    with patch(
+        "dashboard.dashboard_approval_service."
+        "EXECUTION_ENABLED",
+        True,
+    ):
+        with pytest.raises(
+            RuntimeError,
+            match=(
+                "Trade blocked by fresh broker "
+                "preflight: Market is closed"
+            ),
+        ):
+            service.approve(
+                workflow
+            )
+
+    portfolio_manager\
+        .can_open_new_trade\
+        .assert_called_once_with()
+
+    preflight_runner.assert_called_once_with(
+        workflow.plan
+    )
+
+    trade_executor.execute.assert_not_called()
+
+
+def test_approve_uses_fresh_preflight_result_for_execution(
+) -> None:
+    fresh_preflight = PreflightResult(
+        approved=True,
+        reasons=[],
+    )
+
+    preflight_runner = Mock(
+        name="preflight-runner",
+        return_value=fresh_preflight,
+    )
+
+    (
+        service,
+        trade_executor,
+        _,
+        _,
+    ) = make_service(
+        preflight_runner=preflight_runner,
+    )
+
+    workflow = make_workflow()
+
+    with (
+        patch(
+            "dashboard.dashboard_approval_service."
+            "EXECUTION_ENABLED",
+            True,
+        ),
+        patch(
+            "dashboard.dashboard_approval_service."
+            "create_trade_id",
+            return_value="trade-789",
+        ),
+    ):
+        service.approve(
+            workflow
+        )
+
+    executable_workflow = (
+        trade_executor.execute.call_args.args[0]
+    )
+
+    assert (
+        executable_workflow.preflight
+        is fresh_preflight
+    )
+
+    assert (
+        executable_workflow.trade_id
+        == "trade-789"
+    )

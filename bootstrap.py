@@ -116,11 +116,9 @@ def create_trade_manager(
         exit_lookup=exit_lookup,
     )
 
-    order_lifecycle_service = (
-        OrderLifecycleService(
-            broker=trading_client,
-            repository=trade_repository,
-        )
+    order_lifecycle_service = OrderLifecycleService(
+        broker=trading_client,
+        repository=trade_repository,
     )
 
     lifecycle_engine = TradeLifecycleEngine(
@@ -145,8 +143,9 @@ def create_dashboard_approval_service(
     """
     Construct the production dashboard approval path.
 
-    A fresh portfolio risk check is performed immediately
-    before broker execution.
+    Approval performs fresh portfolio and broker
+    preflight validation immediately before paper
+    execution.
     """
 
     trading_client = create_trading_client()
@@ -176,9 +175,15 @@ def create_dashboard_approval_service(
         trading_client
     )
 
+    preflight_runner = partial(
+        run_broker_preflight,
+        trading_client,
+    )
+
     return DashboardApprovalService(
         trade_executor=trade_executor,
         portfolio_manager=portfolio_manager,
+        preflight_runner=preflight_runner,
     )
 
 
