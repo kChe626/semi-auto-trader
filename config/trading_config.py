@@ -27,7 +27,7 @@ ALLOW_SHORT_TRADES = False
 # TRADE QUALITY
 # ============================================================
 
-MINIMUM_TRADE_SCORE = 70.0
+MINIMUM_TRADE_SCORE = 60.0
 MAX_APPROVAL_AGE_MINUTES = 15
 
 
