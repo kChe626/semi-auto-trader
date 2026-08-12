@@ -2,31 +2,47 @@ from models.trade_plan import TradePlan
 from models.trade_score import TradeScore
 
 
-def score_trade(plan: TradePlan) -> TradeScore:
+def score_trade(
+    plan: TradePlan,
+) -> TradeScore:
     """
-    Score a trade plan using reward/risk, total dollar risk,
-    RSI quality, and SMA trend strength.
+    Score a trade plan using:
+
+    - reward/risk
+    - total dollar risk
+    - RSI quality
+    - fresh crossover bonus
+    - SMA trend strength
 
     Higher scores are preferred.
     """
+
     score = 0.0
     reasons: list[str] = []
 
     # Reward/risk score
-    reward_risk_points = plan.risk_reward_ratio * 20
+    reward_risk_points = (
+        plan.risk_reward_ratio * 20
+    )
+
     score += reward_risk_points
 
     reasons.append(
-        f"Reward/Risk {plan.risk_reward_ratio:.2f} "
+        f"Reward/Risk "
+        f"{plan.risk_reward_ratio:.2f} "
         f"(+{reward_risk_points:.2f})"
     )
 
     # Total risk penalty
-    risk_penalty = plan.total_risk / 100
+    risk_penalty = (
+        plan.total_risk / 100
+    )
+
     score -= risk_penalty
 
     reasons.append(
-        f"Total risk ${plan.total_risk:,.2f} "
+        f"Total risk "
+        f"${plan.total_risk:,.2f} "
         f"(-{risk_penalty:.2f})"
     )
 
@@ -36,6 +52,7 @@ def score_trade(plan: TradePlan) -> TradeScore:
             signal_type=plan.signal_type,
             rsi=plan.rsi,
         )
+
         score += rsi_points
 
         reasons.append(
@@ -43,28 +60,48 @@ def score_trade(plan: TradePlan) -> TradeScore:
             f"(+{rsi_points:.2f})"
         )
 
-    # SMA trend-strength score
+    # Fresh crossover + SMA trend score
     if (
         plan.short_sma is not None
         and plan.long_sma is not None
         and plan.long_sma > 0
     ):
-        sma_distance_percent = (
-            plan.short_sma - plan.long_sma
-        ) / plan.long_sma * 100
+        crossover_points = 10.0
 
-        if plan.signal_type.upper() == "SELL":
+        score += crossover_points
+
+        reasons.append(
+            "Fresh SMA crossover "
+            f"(+{crossover_points:.2f})"
+        )
+
+        sma_distance_percent = (
+            (
+                plan.short_sma
+                - plan.long_sma
+            )
+            / plan.long_sma
+            * 100
+        )
+
+        if (
+            plan.signal_type.upper()
+            == "SELL"
+        ):
             sma_distance_percent *= -1
 
         sma_points = max(
             0.0,
-            min(sma_distance_percent * 10, 20.0),
+            min(
+                sma_distance_percent * 10,
+                10.0,
+            ),
         )
 
         score += sma_points
 
         reasons.append(
-            f"SMA separation "
+            "SMA separation "
             f"{sma_distance_percent:.2f}% "
             f"(+{sma_points:.2f})"
         )
@@ -83,15 +120,18 @@ def calculate_rsi_score(
     """
     Score RSI quality from 0 to 20 points.
 
-    BUY trades:
+    BUY:
         RSI near 50 is preferred.
-        Very high RSI receives fewer points.
+        Higher RSI receives fewer points.
 
-    SELL trades:
+    SELL:
         RSI near 50 is preferred.
-        Very low RSI receives fewer points.
+        Lower RSI receives fewer points.
     """
-    normalized_signal_type = signal_type.upper()
+
+    normalized_signal_type = (
+        signal_type.upper()
+    )
 
     if normalized_signal_type == "BUY":
         if rsi <= 50:

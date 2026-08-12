@@ -102,17 +102,41 @@ def test_sell_rsi_near_fifty_scores_better() -> None:
     assert preferred.score > oversold.score
 
 
+def test_valid_bullish_crossover_gets_base_bonus() -> None:
+    result = score_trade(
+        make_plan(
+            rsi=50.0,
+            short_sma=100.01,
+            long_sma=100.0,
+        )
+    )
+
+    # Base score:
+    # R/R 2.0 = +40
+    # Risk $200 = -2
+    # RSI 50 = +20
+    # Fresh crossover = +10
+    # SMA separation ~= +0.01
+    assert result.score > 68.0
+
+    assert any(
+        "Fresh SMA crossover"
+        in reason
+        for reason in result.reasons
+    )
+
+
 def test_larger_bullish_sma_separation_scores_better() -> None:
     weak_trend = score_trade(
         make_plan(
-            short_sma=100.5,
+            short_sma=100.1,
             long_sma=100.0,
         )
     )
 
     strong_trend = score_trade(
         make_plan(
-            short_sma=102.0,
+            short_sma=101.0,
             long_sma=100.0,
         )
     )
@@ -124,7 +148,7 @@ def test_larger_bearish_sma_separation_scores_better() -> None:
     weak_trend = score_trade(
         make_plan(
             signal_type="SELL",
-            short_sma=99.5,
+            short_sma=99.9,
             long_sma=100.0,
         )
     )
@@ -132,12 +156,54 @@ def test_larger_bearish_sma_separation_scores_better() -> None:
     strong_trend = score_trade(
         make_plan(
             signal_type="SELL",
-            short_sma=98.0,
+            short_sma=99.0,
             long_sma=100.0,
         )
     )
 
     assert strong_trend.score > weak_trend.score
+
+
+def test_sma_separation_bonus_is_capped_at_ten() -> None:
+    result = score_trade(
+        make_plan(
+            short_sma=110.0,
+            long_sma=100.0,
+        )
+    )
+
+    sma_reasons = [
+        reason
+        for reason in result.reasons
+        if "SMA separation" in reason
+    ]
+
+    assert len(sma_reasons) == 1
+    assert "(+10.00)" in sma_reasons[0]
+
+
+def test_total_sma_contribution_is_capped_at_twenty() -> None:
+    result = score_trade(
+        make_plan(
+            short_sma=110.0,
+            long_sma=100.0,
+        )
+    )
+
+    crossover_reason = next(
+        reason
+        for reason in result.reasons
+        if "Fresh SMA crossover" in reason
+    )
+
+    separation_reason = next(
+        reason
+        for reason in result.reasons
+        if "SMA separation" in reason
+    )
+
+    assert "(+10.00)" in crossover_reason
+    assert "(+10.00)" in separation_reason
 
 
 def test_missing_indicator_values_are_allowed() -> None:
@@ -149,7 +215,9 @@ def test_missing_indicator_values_are_allowed() -> None:
         )
     )
 
-    assert result.score == pytest.approx(38.0)
+    assert result.score == pytest.approx(
+        38.0
+    )
 
 
 def test_rsi_score_never_goes_negative() -> None:
