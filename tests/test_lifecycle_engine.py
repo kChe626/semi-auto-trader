@@ -149,3 +149,38 @@ def test_engine_reconciles_closed_positions() -> None:
             ]
         )
     )
+def test_engine_manages_every_open_position() -> None:
+    monitor = MagicMock()
+    order_reconciler = MagicMock()
+    position_reconciler = MagicMock()
+    position_management_coordinator = MagicMock()
+
+    position1 = object()
+    position2 = object()
+
+    monitor.get_recent_orders.return_value = []
+    monitor.get_open_positions.return_value = [
+        position1,
+        position2,
+    ]
+
+    engine = TradeLifecycleEngine(
+        monitor,
+        order_reconciler,
+        position_reconciler,
+        position_management_coordinator=(
+            position_management_coordinator
+        ),
+    )
+
+    engine.synchronize()
+
+    assert (
+        position_management_coordinator
+        .manage_position
+        .call_args_list
+        == [
+            ((position1,),),
+            ((position2,),),
+        ]
+    )

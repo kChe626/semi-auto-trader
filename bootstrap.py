@@ -54,11 +54,18 @@ from execution.sqlite_trade_repository import (
 )
 from execution.trade_executor import TradeExecutor
 from risk.portfolio_manager import PortfolioManager
+from scanner.market_data import get_historical_bars
 from trade_management.exit_reconciler import (
     ExitReconciler,
 )
 from trade_management.lifecycle_engine import (
     TradeLifecycleEngine,
+)
+from trade_management.position_management_coordinator import (
+    PositionManagementCoordinator,
+)
+from trade_management.position_management_service import (
+    PositionManagementService,
 )
 from trade_management.position_reconciler import (
     PositionReconciler,
@@ -93,6 +100,13 @@ def create_trade_manager(
     """
     Construct the production broker-state lifecycle
     manager.
+
+    This includes:
+    - broker order reconciliation
+    - broker position reconciliation
+    - closed-position reconciliation
+    - persisted-order lifecycle synchronization
+    - smart open-position management
     """
 
     monitor = PositionMonitor(
@@ -121,6 +135,25 @@ def create_trade_manager(
         repository=trade_repository,
     )
 
+    position_management_service = (
+        PositionManagementService(
+            trading_client=trading_client,
+            journal=trade_journal,
+        )
+    )
+
+    position_management_coordinator = (
+        PositionManagementCoordinator(
+            journal=trade_journal,
+            management_service=(
+                position_management_service
+            ),
+            historical_loader=(
+                get_historical_bars
+            ),
+        )
+    )
+
     lifecycle_engine = TradeLifecycleEngine(
         monitor=monitor,
         order_reconciler=order_reconciler,
@@ -128,6 +161,9 @@ def create_trade_manager(
         exit_reconciler=exit_reconciler,
         order_lifecycle_service=(
             order_lifecycle_service
+        ),
+        position_management_coordinator=(
+            position_management_coordinator
         ),
     )
 

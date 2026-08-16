@@ -6,6 +6,9 @@ from execution.order_lifecycle_service import (
 )
 from models.reconciliation import ReconciliationResult
 from trade_management.exit_reconciler import ExitReconciler
+from trade_management.position_management_coordinator import (
+    PositionManagementCoordinator,
+)
 from trade_management.position_reconciler import (
     PositionReconciler,
 )
@@ -18,6 +21,9 @@ class TradeLifecycleEngine:
     """
     Synchronizes broker orders and positions into
     the local trade journal and trade repository.
+
+    Optionally manages open positions using the
+    configured smart exit policy.
     """
 
     def __init__(
@@ -27,6 +33,9 @@ class TradeLifecycleEngine:
         position_reconciler: PositionReconciler,
         exit_reconciler: ExitReconciler | None = None,
         order_lifecycle_service: OrderLifecycleService | None = None,
+        position_management_coordinator: (
+            PositionManagementCoordinator | None
+        ) = None,
     ) -> None:
         self._monitor = monitor
         self._order_reconciler = order_reconciler
@@ -36,6 +45,9 @@ class TradeLifecycleEngine:
         self._exit_reconciler = exit_reconciler
         self._order_lifecycle_service = (
             order_lifecycle_service
+        )
+        self._position_management_coordinator = (
+            position_management_coordinator
         )
 
     def synchronize(
@@ -71,6 +83,15 @@ class TradeLifecycleEngine:
                 self._position_reconciler
                 .reconcile_position(position)
             )
+
+            if (
+                self._position_management_coordinator
+                is not None
+            ):
+                (
+                    self._position_management_coordinator
+                    .manage_position(position)
+                )
 
         if self._exit_reconciler is not None:
             (

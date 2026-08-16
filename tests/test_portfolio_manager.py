@@ -29,7 +29,7 @@ def test_portfolio_allows_trade() -> None:
     assert reason == ""
 
 
-def test_portfolio_blocks_when_position_limit_reached() -> None:
+def test_one_existing_position_still_allows_trade() -> None:
     client = create_mock_client()
 
     client.get_all_positions.return_value = [
@@ -40,11 +40,11 @@ def test_portfolio_blocks_when_position_limit_reached() -> None:
 
     allowed, reason = manager.can_open_new_trade()
 
-    assert allowed is False
-    assert "Maximum active trades" in reason
+    assert allowed is True
+    assert reason == ""
 
 
-def test_portfolio_blocks_when_open_order_exists() -> None:
+def test_one_open_order_still_allows_trade() -> None:
     client = create_mock_client()
 
     client.get_orders.return_value = [
@@ -55,8 +55,8 @@ def test_portfolio_blocks_when_open_order_exists() -> None:
 
     allowed, reason = manager.can_open_new_trade()
 
-    assert allowed is False
-    assert "Maximum active trades" in reason
+    assert allowed is True
+    assert reason == ""
 
 
 def test_position_and_orders_for_same_symbol_count_once() -> None:
@@ -69,6 +69,57 @@ def test_position_and_orders_for_same_symbol_count_once() -> None:
     client.get_orders.return_value = [
         SimpleNamespace(symbol="META"),
         SimpleNamespace(symbol="META"),
+    ]
+
+    manager = PortfolioManager(client)
+
+    allowed, reason = manager.can_open_new_trade()
+
+    assert allowed is True
+    assert reason == ""
+
+
+def test_portfolio_blocks_when_two_positions_are_active() -> None:
+    client = create_mock_client()
+
+    client.get_all_positions.return_value = [
+        SimpleNamespace(symbol="META"),
+        SimpleNamespace(symbol="NVDA"),
+    ]
+
+    manager = PortfolioManager(client)
+
+    allowed, reason = manager.can_open_new_trade()
+
+    assert allowed is False
+    assert "Maximum active trades" in reason
+
+
+def test_portfolio_blocks_when_two_distinct_orders_are_active() -> None:
+    client = create_mock_client()
+
+    client.get_orders.return_value = [
+        SimpleNamespace(symbol="META"),
+        SimpleNamespace(symbol="NVDA"),
+    ]
+
+    manager = PortfolioManager(client)
+
+    allowed, reason = manager.can_open_new_trade()
+
+    assert allowed is False
+    assert "Maximum active trades" in reason
+
+
+def test_position_and_order_for_different_symbols_hit_limit() -> None:
+    client = create_mock_client()
+
+    client.get_all_positions.return_value = [
+        SimpleNamespace(symbol="META"),
+    ]
+
+    client.get_orders.return_value = [
+        SimpleNamespace(symbol="NVDA"),
     ]
 
     manager = PortfolioManager(client)

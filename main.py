@@ -1,25 +1,29 @@
 from __future__ import annotations
 
 from dataclasses import replace
+from functools import partial
 from pathlib import Path
 
+from application.trade_approval_factory import (
+    create_trade_approval,
+)
+from application.trade_execution_service import (
+    TradeExecutionService,
+)
+from application.trade_workflow import TradeWorkflow
 from bootstrap import create_trade_repository
 from broker.alpaca_client import create_trading_client
+from broker.exit_lookup import BrokerExitLookup
+from broker.order_confirmation import (
+    confirm_paper_order,
+)
 from broker.order_executor import OrderExecutor
 from broker.order_verifier import (
     AlpacaOrderVerifier,
 )
 from broker.position_monitor import PositionMonitor
 from broker.preflight_service import run_broker_preflight
-from config.telegram_config import (
-    TELEGRAM_APPROVAL_ENABLED,
-    TELEGRAM_BOT_TOKEN,
-    TELEGRAM_CHAT_ID,
-)
-
-from notifications.telegram_runtime_factory import (
-    create_runtime_telegram_approval,
-)
+from config import telegram_config
 from config.trading_config import (
     ALLOW_LONG_TRADES,
     ALLOW_SHORT_TRADES,
@@ -42,14 +46,10 @@ from database.trade_journal import (
 from execution.order_lifecycle_service import (
     OrderLifecycleService,
 )
-from execution.trade_executor import (
-    TradeExecutor,
-)
+from execution.trade_executor import TradeExecutor
 from models.trade import (
-    Trade,
     TradeStatus,
 )
-
 from notifications.notification_service import (
     NotificationSender,
     format_trade_alert,
@@ -58,10 +58,12 @@ from notifications.notification_service import (
 from notifications.telegram_notifier import (
     send_telegram_message,
 )
+from notifications.telegram_runtime_factory import (
+    create_runtime_telegram_approval,
+)
 from risk.plan_formatter import format_trade_plan
 from risk.portfolio_manager import PortfolioManager
-
-
+from scanner.market_data import get_historical_bars
 from scanner.market_filter import market_is_bullish
 from scanner.scanner import scan_market
 from scanner.trade_ranker import rank_trade_plans
@@ -70,6 +72,12 @@ from trade_management.exit_reconciler import (
 )
 from trade_management.lifecycle_engine import (
     TradeLifecycleEngine,
+)
+from trade_management.position_management_coordinator import (
+    PositionManagementCoordinator,
+)
+from trade_management.position_management_service import (
+    PositionManagementService,
 )
 from trade_management.position_reconciler import (
     PositionReconciler,
@@ -81,22 +89,6 @@ from trade_management.trade_identity import (
     create_trade_id,
 )
 from trade_management.trade_manager import TradeManager
-from application.trade_approval_factory import (
-    create_trade_approval,
-)
-
-from application.trade_execution_service import (
-    TradeExecutionService,
-)
-
-from application.trade_workflow import TradeWorkflow
-
-
-from broker.order_confirmation import (
-    confirm_paper_order,
-)
-
-from broker.exit_lookup import BrokerExitLookup
 
 
 def signal_direction_is_allowed(
@@ -148,10 +140,31 @@ def synchronize_broker_state(
         order_lifecycle_service = None
 
         if trade_repository is not None:
-            order_lifecycle_service = OrderLifecycleService(
-                broker=trading_client,
-                repository=trade_repository,
+            order_lifecycle_service = (
+                OrderLifecycleService(
+                    broker=trading_client,
+                    repository=trade_repository,
+                )
             )
+
+        position_management_service = (
+            PositionManagementService(
+                trading_client=trading_client,
+                journal=journal,
+            )
+        )
+
+        position_management_coordinator = (
+            PositionManagementCoordinator(
+                journal=journal,
+                management_service=(
+                    position_management_service
+                ),
+                historical_loader=(
+                    get_historical_bars
+                ),
+            )
+        )
 
         lifecycle_engine = TradeLifecycleEngine(
             monitor=monitor,
@@ -160,6 +173,9 @@ def synchronize_broker_state(
             exit_reconciler=exit_reconciler,
             order_lifecycle_service=(
                 order_lifecycle_service
+            ),
+            position_management_coordinator=(
+                position_management_coordinator
             ),
         )
 
@@ -196,8 +212,6 @@ def synchronize_broker_state(
     return True
 
 
-
-
 def main(
     notification_sender: NotificationSender | None = None,
     journal: TradeJournal | None = None,
@@ -205,7 +219,6 @@ def main(
     trade_approval=None,
     trade_workflow=None,
 ) -> None:
-
     if trade_approval is None:
         trade_approval = create_trade_approval(
             enabled=True,
@@ -216,18 +229,24 @@ def main(
 
     try:
         account = trading_client.get_account()
+
         account_equity = float(
             account.equity
         )
-        if trade_workflow is None:
-            from functools import partial
 
+        if trade_workflow is None:
             trade_workflow = TradeWorkflow(
                 account_equity=account_equity,
                 risk_percent=RISK_PERCENT,
-                max_position_percent=MAX_POSITION_PERCENT,
-                stop_loss_percent=STOP_LOSS_PERCENT,
-                reward_risk_ratio=REWARD_RISK_RATIO,
+                max_position_percent=(
+                    MAX_POSITION_PERCENT
+                ),
+                stop_loss_percent=(
+                    STOP_LOSS_PERCENT
+                ),
+                reward_risk_ratio=(
+                    REWARD_RISK_RATIO
+                ),
                 preflight_runner=partial(
                     run_broker_preflight,
                     trading_client,
@@ -249,12 +268,15 @@ def main(
                 f"{message}"
             ),
         )
+
         return
 
     synchronized = synchronize_broker_state(
         trading_client=trading_client,
         journal=journal,
-        notification_sender=notification_sender,
+        notification_sender=(
+            notification_sender
+        ),
         trade_repository=trade_repository,
     )
 
@@ -268,30 +290,37 @@ def main(
     print("=" * 60)
     print("SEMI-AUTOMATED PAPER TRADER")
     print("=" * 60)
+
     print(
         f"Account Equity: "
         f"${account_equity:,.2f}"
     )
+
     print(
         f"Watchlist Size: "
         f"{len(WATCHLIST)}"
     )
+
     print(
         f"Minimum Score: "
         f"{MINIMUM_TRADE_SCORE:.2f}"
     )
+
     print(
         "Long Trades: "
         f"{'Enabled' if ALLOW_LONG_TRADES else 'Disabled'}"
     )
+
     print(
         "Short Trades: "
         f"{'Enabled' if ALLOW_SHORT_TRADES else 'Disabled'}"
     )
+
     print(
         "Paper Execution: "
         f"{'Enabled' if EXECUTION_ENABLED else 'Disabled'}"
     )
+
     print()
 
     try:
@@ -312,6 +341,7 @@ def main(
                 f"{message}"
             ),
         )
+
         return
 
     print("=" * 60)
@@ -323,6 +353,7 @@ def main(
             "SPY is meaningfully below its "
             "50-day SMA."
         )
+
         print(
             "No new long trades today."
         )
@@ -337,22 +368,25 @@ def main(
                 "new long trades."
             ),
         )
+
         return
 
     print(
         "Market filter passed."
     )
+
     print(
         "SPY is bullish or within the neutral "
         "range of its 50-day SMA."
     )
+
     print()
+
     print(
         f"Scanning {len(WATCHLIST)} symbols..."
     )
+
     print()
-
-
 
     portfolio_manager = PortfolioManager(
         trading_client
@@ -361,9 +395,13 @@ def main(
     order_executor = OrderExecutor(
         trading_client
     )
+
     trade_executor = None
 
-    if journal is not None and trade_repository is not None:
+    if (
+        journal is not None
+        and trade_repository is not None
+    ):
         trade_executor = TradeExecutor(
             broker=order_executor,
             journal=journal,
@@ -374,17 +412,24 @@ def main(
         )
 
     if trade_executor is not None:
-        execution_function = trade_executor.execute
+        execution_function = (
+            trade_executor.execute
+        )
     else:
-        execution_function = lambda workflow: (
-            order_executor.submit_bracket_order(
-                workflow.plan
+        execution_function = (
+            lambda workflow: (
+                order_executor
+                .submit_bracket_order(
+                    workflow.plan
+                )
             )
         )
 
-    trade_execution_service = TradeExecutionService(
-        trade_approval=trade_approval,
-        trade_executor=execution_function,
+    trade_execution_service = (
+        TradeExecutionService(
+            trade_approval=trade_approval,
+            trade_executor=execution_function,
+        )
     )
 
     try:
@@ -406,6 +451,7 @@ def main(
                 f"{message}"
             ),
         )
+
         return
 
     if not signals:
@@ -420,6 +466,7 @@ def main(
                 "No valid trade signals were found."
             ),
         )
+
         return
 
     eligible_workflows = []
@@ -469,12 +516,16 @@ def main(
             continue
 
         try:
-            workflow_result = trade_workflow.prepare_trade(
-                signal
+            workflow_result = (
+                trade_workflow.prepare_trade(
+                    signal
+                )
             )
 
             plan = workflow_result.plan
-            preflight = workflow_result.preflight
+            preflight = (
+                workflow_result.preflight
+            )
 
         except Exception as error:
             message = (
@@ -488,13 +539,14 @@ def main(
             record_event_safely(
                 journal,
                 symbol=signal.symbol,
-                status="plan_creation_failed",
+                status=(
+                    "plan_creation_failed"
+                ),
                 signal_type=signal_type,
                 reason=str(error),
             )
 
             continue
-
 
         if plan.quantity <= 0:
             reason = (
@@ -518,6 +570,7 @@ def main(
         eligible_workflows.append(
             workflow_result
         )
+
     print("=" * 60)
 
     if not eligible_workflows:
@@ -535,7 +588,9 @@ def main(
                 "risk filters."
             ),
         )
+
         return
+
     workflow_by_plan_id = {
         id(workflow.plan): workflow
         for workflow in eligible_workflows
@@ -551,7 +606,8 @@ def main(
     qualified_trades = [
         trade
         for trade in ranked_trades
-        if trade.score >= MINIMUM_TRADE_SCORE
+        if trade.score
+        >= MINIMUM_TRADE_SCORE
     ]
 
     print()
@@ -590,23 +646,48 @@ def main(
             "minimum score requirement."
         )
 
+        ranking_lines = [
+            (
+                f"{position}. "
+                f"{trade_score.plan.symbol} "
+                f"{trade_score.plan.signal_type} "
+                f"- Score "
+                f"{trade_score.score:.2f}"
+            )
+            for position, trade_score in enumerate(
+                ranked_trades,
+                start=1,
+            )
+        ]
+
+        ranking_text = (
+            "\n".join(ranking_lines)
+            if ranking_lines
+            else "No ranked trade candidates."
+        )
+
         send_notification_safely(
             notification_sender,
             (
                 "SCAN COMPLETE\n\n"
                 "No trade candidates met the "
                 "minimum score of "
-                f"{MINIMUM_TRADE_SCORE:.0f}."
+                f"{MINIMUM_TRADE_SCORE:.0f}.\n\n"
+                "Candidate scores:\n"
+                f"{ranking_text}"
             ),
         )
+
         return
 
     for trade_score in qualified_trades:
         plan = trade_score.plan
 
-        workflow_result = workflow_by_plan_id[
-            id(plan)
-        ]
+        workflow_result = (
+            workflow_by_plan_id[
+                id(plan)
+            ]
+        )
 
         trade_id = create_trade_id()
 
@@ -629,24 +710,33 @@ def main(
 
         print()
         print("=" * 60)
+
         print(
             f"EVALUATING {plan.symbol}"
         )
+
         print("=" * 60)
+
         print(
             f"Trade ID: {trade_id}"
         )
+
         print(
             f"Trade Score: "
             f"{trade_score.score:.2f}"
         )
+
         print()
+
         print(
             format_trade_plan(plan)
         )
 
         try:
-            allowed, portfolio_reason = (
+            (
+                allowed,
+                portfolio_reason,
+            ) = (
                 portfolio_manager
                 .can_open_new_trade()
             )
@@ -676,6 +766,7 @@ def main(
                     f"{message}"
                 ),
             )
+
             continue
 
         if not allowed:
@@ -703,9 +794,8 @@ def main(
                     f"Reason: {portfolio_reason}"
                 ),
             )
-            continue
 
- 
+            continue
 
         if not preflight.approved:
             print(
@@ -742,13 +832,12 @@ def main(
                     f"{reason_text}"
                 ),
             )
+
             continue
 
         print(
             "\nPreflight checks passed."
         )
-
-
 
         record_plan_safely(
             journal,
@@ -771,11 +860,13 @@ def main(
 
         if not EXECUTION_ENABLED:
             print()
+
             print(
                 "Execution is disabled. "
                 "No paper order was submitted for "
                 f"{plan.symbol}."
             )
+
             print(
                 "Set EXECUTION_ENABLED = True in "
                 "config/trading_config.py when ready."
@@ -802,14 +893,11 @@ def main(
                     "but paper execution is disabled."
                 ),
             )
+
             return
+
         order = trade_execution_service.execute(
             workflow_result
-        )
-        order_id = getattr(
-            order,
-            "id",
-            "Unavailable",
         )
 
         if order is None:
@@ -824,8 +912,7 @@ def main(
                 status="user_cancelled",
                 score=trade_score.score,
                 reason=(
-                    "Paper order was not approved "
-                    "in the terminal."
+                    "Paper order was not approved."
                 ),
                 trade_id=trade_id,
             )
@@ -835,13 +922,17 @@ def main(
                 (
                     "ORDER CANCELLED\n\n"
                     f"Symbol: {plan.symbol}\n"
-                    "The paper order was not "
-                    "approved in the terminal."
+                    "The paper order was not approved."
                 ),
             )
+
             continue
 
-
+        order_id = getattr(
+            order,
+            "id",
+            "Unavailable",
+        )
 
         order_status = getattr(
             order,
@@ -855,35 +946,41 @@ def main(
             plan.symbol,
         )
 
-
-
         print()
         print("=" * 60)
         print(
             "PAPER ORDER SUBMITTED AND VERIFIED"
         )
         print("=" * 60)
+
         print(
             f"Symbol:   {order_symbol}"
         )
+
         print(
             f"Side:     {plan.signal_type}"
         )
+
         print(
             f"Quantity: {plan.quantity}"
         )
+
         print(
             f"Score:    {trade_score.score:.2f}"
         )
+
         print(
             f"Trade ID: {trade_id}"
         )
+
         print(
             f"Order ID: {order_id}"
         )
+
         print(
             f"Status:   {order_status}"
         )
+
         print("=" * 60)
 
         record_plan_safely(
@@ -936,7 +1033,6 @@ def run_production(
     *,
     database_path: Path | str = DATABASE_PATH,
 ) -> None:
-
     journal = TradeJournal(
         database_path=database_path,
     )
@@ -945,23 +1041,37 @@ def run_production(
         database_path=database_path,
     )
 
+    telegram_config.load_telegram_config()
+
     trade_approval = None
 
-    if TELEGRAM_APPROVAL_ENABLED:
-        trade_approval = create_runtime_telegram_approval(
-            bot_token=TELEGRAM_BOT_TOKEN,
-            chat_id=TELEGRAM_CHAT_ID,
+    if telegram_config.TELEGRAM_APPROVAL_ENABLED:
+        trade_approval = (
+            create_runtime_telegram_approval(
+                bot_token=(
+                    telegram_config
+                    .TELEGRAM_BOT_TOKEN
+                ),
+                chat_id=(
+                    telegram_config
+                    .TELEGRAM_CHAT_ID
+                ),
+            )
         )
 
     if trade_approval is None:
         main(
-            notification_sender=send_telegram_message,
+            notification_sender=(
+                send_telegram_message
+            ),
             journal=journal,
             trade_repository=trade_repository,
         )
     else:
         main(
-            notification_sender=send_telegram_message,
+            notification_sender=(
+                send_telegram_message
+            ),
             journal=journal,
             trade_repository=trade_repository,
             trade_approval=trade_approval,

@@ -37,7 +37,7 @@ def test_create_dashboard_service_wires_trade_workflow(
     )
 
     account = Mock(
-        name="account"
+        name="account",
     )
     account.equity = "100000.00"
 
@@ -176,4 +176,94 @@ def test_create_trade_repository_uses_database_path(
 
     repository_class.assert_called_once_with(
         database_path=database_path,
+    )
+
+
+def test_create_trade_manager_wires_position_management(
+    tmp_path: Path,
+) -> None:
+    trading_client = Mock(
+        name="trading-client",
+    )
+
+    trade_journal = Mock(
+        name="trade-journal",
+    )
+
+    trade_repository = Mock(
+        name="trade-repository",
+    )
+
+    position_management_service = Mock(
+        name="position-management-service",
+    )
+
+    position_management_coordinator = Mock(
+        name="position-management-coordinator",
+    )
+
+    lifecycle_engine = Mock(
+        name="lifecycle-engine",
+    )
+
+    trade_manager = Mock(
+        name="trade-manager",
+    )
+
+    with (
+        patch.object(
+            bootstrap,
+            "PositionManagementService",
+            return_value=position_management_service,
+        ) as service_class,
+        patch.object(
+            bootstrap,
+            "PositionManagementCoordinator",
+            return_value=position_management_coordinator,
+        ) as coordinator_class,
+        patch.object(
+            bootstrap,
+            "TradeLifecycleEngine",
+            return_value=lifecycle_engine,
+        ) as lifecycle_engine_class,
+        patch.object(
+            bootstrap,
+            "TradeManager",
+            return_value=trade_manager,
+        ) as trade_manager_class,
+    ):
+        result = bootstrap.create_trade_manager(
+            trading_client=trading_client,
+            trade_journal=trade_journal,
+            trade_repository=trade_repository,
+        )
+
+    assert result is trade_manager
+
+    service_class.assert_called_once_with(
+        trading_client=trading_client,
+        journal=trade_journal,
+    )
+
+    coordinator_class.assert_called_once_with(
+        journal=trade_journal,
+        management_service=(
+            position_management_service
+        ),
+        historical_loader=(
+            bootstrap.get_historical_bars
+        ),
+    )
+
+    assert (
+        lifecycle_engine_class
+        .call_args
+        .kwargs[
+            "position_management_coordinator"
+        ]
+        is position_management_coordinator
+    )
+
+    trade_manager_class.assert_called_once_with(
+        lifecycle_engine
     )

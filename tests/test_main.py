@@ -385,6 +385,88 @@ def test_synchronize_broker_state_wires_exit_lookup(
         .assert_called_once_with()
 
 
+def test_synchronize_broker_state_wires_position_management(
+    monkeypatch,
+) -> None:
+    trading_client = MagicMock()
+    journal = MagicMock()
+
+    management_service = MagicMock(
+        name="position-management-service"
+    )
+
+    coordinator = MagicMock(
+        name="position-management-coordinator"
+    )
+
+    lifecycle_engine = MagicMock(
+        name="lifecycle-engine"
+    )
+
+    management_service_class = MagicMock(
+        return_value=management_service
+    )
+
+    coordinator_class = MagicMock(
+        return_value=coordinator
+    )
+
+    lifecycle_engine_class = MagicMock(
+        return_value=lifecycle_engine
+    )
+
+    monkeypatch.setattr(
+        main,
+        "PositionManagementService",
+        management_service_class,
+    )
+
+    monkeypatch.setattr(
+        main,
+        "PositionManagementCoordinator",
+        coordinator_class,
+    )
+
+    monkeypatch.setattr(
+        main,
+        "TradeLifecycleEngine",
+        lifecycle_engine_class,
+    )
+
+    result = main.synchronize_broker_state(
+        trading_client=trading_client,
+        journal=journal,
+        notification_sender=MagicMock(),
+    )
+
+    assert result is True
+
+    management_service_class.assert_called_once_with(
+        trading_client=trading_client,
+        journal=journal,
+    )
+
+    coordinator_class.assert_called_once_with(
+        journal=journal,
+        management_service=management_service,
+        historical_loader=(
+            main.get_historical_bars
+        ),
+    )
+
+    assert (
+        lifecycle_engine_class
+        .call_args
+        .kwargs[
+            "position_management_coordinator"
+        ]
+        is coordinator
+    )
+
+    lifecycle_engine.synchronize\
+        .assert_called_once_with()
+
+
 def test_synchronize_broker_state_accepts_trade_repository(
     monkeypatch,
 ) -> None:
